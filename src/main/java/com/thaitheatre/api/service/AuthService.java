@@ -79,6 +79,9 @@ public class AuthService {
         System.out.println("Generated JWT Token: " + token);
 
         long expSec = jwt.getExpMillis() / 1000;
-        return AuthResponse.bearer(token, expSec);
+        return AuthResponse.bearer(token, expSec, new UserProfileDTO(
+                user.getId(), user.getFirstName(), user.getLastName(),
+                user.getEmail(), user.getPolicyConfirmed()
+        ));
     }
 }

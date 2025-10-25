@@ -1,40 +1,47 @@
 package com.thaitheatre.api.service;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.List;
+
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
 import com.thaitheatre.api.common.DelFlag;
 import com.thaitheatre.api.common.RecordStatus;
 import com.thaitheatre.api.model.dto.ProfileRequest;
 import com.thaitheatre.api.model.dto.ProfileResponse;
 import com.thaitheatre.api.model.entity.Profile;
-import com.thaitheatre.api.repository.ProfileRepository;
+import com.thaitheatre.api.repository.ProfileRepository;     // 👈 สมมุติชื่อเอนทิตีผู้ใช้
+import com.thaitheatre.api.repository.UserRepository;
 
-
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.util.List;
+import lombok.RequiredArgsConstructor;    // 👈 เพิ่ม repo ผู้ใช้
 
 @Service
 @RequiredArgsConstructor
 public class ProfileService {
 
     private final ProfileRepository repo;
-    private final ObjectMapper om;
+    private final UserRepository userRepo;              // 👈 ฉีดเข้ามา
 
     @Transactional
     public ProfileResponse createOrUpdate(Long userId, ProfileRequest req) {
         var profile = repo.findByUserId(userId).orElseGet(() -> {
             var p = new Profile();
             p.setUserId(userId);
-            // ✅ โปรไฟล์ที่สร้างใหม่ ตั้งสถานะเริ่มต้นเสมอ
             p.setRecordStatus(RecordStatus.A);
             p.setDelFlag(DelFlag.N);
+            // กัน NPE สำหรับลิสต์ jsonb (เผื่อ DB ยังไม่มี DEFAULT)
+            p.setWorkLocations(List.of());
+            p.setUnions(List.of());
+            p.setExperience(List.of());
+            p.setPartners(List.of());
+            p.setGenders(List.of());
+            p.setRaces(List.of());
+            p.setAdditionals(List.of());
+            p.setCredits(List.of());
             return p;
         });
 
-        // map fields
+        // map fields (primitive boolean โอเคอยู่แล้ว)
         profile.setPrivateProfile(req.privateProfile());
         profile.setProfileIsCompany(req.profileIsCompany());
 
@@ -59,40 +66,76 @@ public class ProfileService {
         profile.setVideo1(req.video1());
         profile.setVideo2(req.video2());
 
-        profile.setWorkLocations(writeJson(req.workLocations()));
-        profile.setUnions(writeJson(req.unions()));
-        profile.setExperience(writeJson(req.experience()));
-        profile.setPartners(writeJson(req.partners()));
-        profile.setGenders(writeJson(req.genders()));
-        profile.setRaces(writeJson(req.races()));
-        profile.setAdditionals(writeJson(req.additionals()));
-        profile.setCredits(writeJson(req.credits()));
+        // ✅ jsonb: set เป็น List<Integer> ตรง ๆ
+        profile.setWorkLocations(nvl(req.workLocations()));
+        profile.setUnions(nvl(req.unions()));
+        profile.setExperience(nvl(req.experience()));
+        profile.setPartners(nvl(req.partners()));
+        profile.setGenders(nvl(req.genders()));
+        profile.setRaces(nvl(req.races()));
+        profile.setAdditionals(nvl(req.additionals()));
+        profile.setCredits(nvl(req.credits()));
 
         var saved = repo.save(profile);
+
+        // ✅ อัปเดตชื่อ–นามสกุลในตาราง users ภายใต้ทรานแซกชันเดียวกัน
+        syncUserName(userId, req.firstName(), req.lastName());
+
         return toResponse(saved);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public ProfileResponse getMy(Long userId) {
-        var p = repo.findByUserId(userId).orElseThrow(() -> new IllegalStateException("Profile not found"));
+        var p = repo.findByUserId(userId).orElseGet(() -> {
+            var np = new Profile();
+            np.setUserId(userId);
+            np.setRecordStatus(RecordStatus.A);
+            np.setDelFlag(DelFlag.N);
+            // ค่าเริ่มต้นลิสต์ว่างเพื่อความปลอดภัย
+            np.setWorkLocations(List.of());
+            np.setUnions(List.of());
+            np.setExperience(List.of());
+            np.setPartners(List.of());
+            np.setGenders(List.of());
+            np.setRaces(List.of());
+            np.setAdditionals(List.of());
+            np.setCredits(List.of());
+            return repo.save(np);
+        });
         return toResponse(p);
     }
 
-    private String writeJson(List<Integer> list) {
-        try {
-            return list == null ? "[]" : om.writeValueAsString(list);
-        } catch (Exception e) {
-            throw new RuntimeException("Cannot serialize list", e);
+    /**
+     * อัปเดต first_name / last_name ในตาราง users เฉพาะเมื่อมีค่าใหม่และแตกต่าง
+     */
+    private void syncUserName(Long userId, String firstName, String lastName) {
+        var user = userRepo.findById(userId)
+                .orElseThrow(() -> new IllegalStateException("User not found for id=" + userId));
+
+        boolean changed = false;
+
+        if (firstName != null) {
+            var fn = firstName.trim();
+            if (!fn.isEmpty() && !fn.equals(user.getFirstName())) {
+                user.setFirstName(fn);
+                changed = true;
+            }
+        }
+        if (lastName != null) {
+            var ln = lastName.trim();
+            if (!ln.isEmpty() && !ln.equals(user.getLastName())) {
+                user.setLastName(ln);
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            userRepo.save(user);
         }
     }
 
-    private List<Integer> readJson(String json) {
-        try {
-            return json == null ? List.of() : om.readValue(json, new TypeReference<List<Integer>>() {
-            });
-        } catch (Exception e) {
-            throw new RuntimeException("Cannot deserialize list", e);
-        }
+    private static List<Integer> nvl(List<Integer> v) {
+        return v == null ? List.of() : v;
     }
 
     private ProfileResponse toResponse(Profile p) {
@@ -116,14 +159,14 @@ public class ProfileService {
                 p.getEducation(),
                 p.getVideo1(),
                 p.getVideo2(),
-                readJson(p.getWorkLocations()),
-                readJson(p.getUnions()),
-                readJson(p.getExperience()),
-                readJson(p.getPartners()),
-                readJson(p.getGenders()),
-                readJson(p.getRaces()),
-                readJson(p.getAdditionals()),
-                readJson(p.getCredits()),
+                nvl(p.getWorkLocations()),
+                nvl(p.getUnions()),
+                nvl(p.getExperience()),
+                nvl(p.getPartners()),
+                nvl(p.getGenders()),
+                nvl(p.getRaces()),
+                nvl(p.getAdditionals()),
+                nvl(p.getCredits()),
                 p.getCreatedAt(),
                 p.getUpdatedAt()
         );

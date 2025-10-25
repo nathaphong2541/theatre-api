@@ -1,8 +1,11 @@
 package com.thaitheatre.api.model.entity;
 
 import java.time.Instant;
+import java.util.List;
 
 import org.hibernate.annotations.ColumnDefault;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import com.thaitheatre.api.common.DelFlag;
 import com.thaitheatre.api.common.RecordStatus;
@@ -20,16 +23,15 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.Data;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-@Data
 @Entity
-@Table(name = "profiles", uniqueConstraints = {
-    @UniqueConstraint(name = "uk_profiles_user_id", columnNames = "user_id")
-})
+@Table(
+        name = "profiles",
+        uniqueConstraints = @UniqueConstraint(name = "uk_profiles_user_id", columnNames = "user_id")
+)
 @Getter
 @Setter
 @Builder
@@ -41,11 +43,11 @@ public class Profile {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // อ้างถึงตาราง users (สมมติ users.id เป็น PK)
+    // อ้างถึง users.id
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    // Options
+    // -------- Options
     @Column(name = "private_profile", nullable = false)
     @ColumnDefault("false")
     private boolean privateProfile;
@@ -54,25 +56,25 @@ public class Profile {
     @ColumnDefault("false")
     private boolean profileIsCompany;
 
-    // Name
-    @Column(length = 100, nullable = false)
+    // -------- Name (ไม่บังคับเสมอไป ปล่อยให้ validate ใน DTO/Service)
+    @Column(length = 100)
     private String firstName;
 
-    @Column(length = 100, nullable = false)
+    @Column(length = 100)
     private String lastName;
 
     @Column(length = 50)
     private String pronouns;
 
-    // Profession
-    @Column(length = 50, nullable = false)
+    // -------- Profession
+    @Column(length = 50)
     private String title;
 
     @Column(length = 50)
     private String location;
 
-    // Contact
-    @Column(length = 150, nullable = false)
+    // -------- Contact
+    @Column(length = 150)
     private String email;
 
     @Column(length = 30)
@@ -81,59 +83,66 @@ public class Profile {
     @Column(length = 255)
     private String website;
 
-    // Flags
+    // -------- Flags
     @Column(name = "multi_lang", nullable = false)
     @ColumnDefault("false")
     private boolean multiLang;
 
-    // ใช้ Boolean wrapper เพื่อให้ null ได้ตามฟอร์ม
+    // ใช้ Boolean wrapper ให้ null ได้ตามฟอร์ม
     @Column
     private Boolean travel;
 
     @Column
     private Boolean tour;
 
-    // About/Education (text)
+    // -------- About/Education
     @Column(columnDefinition = "text")
     private String about;
 
     @Column(columnDefinition = "text")
     private String education;
 
-    // Media URLs
+    // -------- Media URLs
     @Column(length = 255)
     private String video1;
 
     @Column(length = 255)
     private String video2;
 
-    // กลุ่มตัวเลข → jsonb (ARRAY ของ number)
-    // ใช้ String raw JSON แล้วให้ Service แปลง Jackson (ObjectMapper) เป็น/จาก List<Integer> เมื่อรับ/ส่ง DTO
-    @Column(columnDefinition = "jsonb")
-    private String workLocations; // [1,2,3]
+    // -------- JSONB (List<Integer>) — ใช้ Hibernate 6 JSON type
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "work_locations", columnDefinition = "jsonb not null default '[]'::jsonb")
+    private List<Integer> workLocations;
 
-    @Column(columnDefinition = "jsonb")
-    private String unions;
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "unions", columnDefinition = "jsonb not null default '[]'::jsonb")
+    private List<Integer> unions;
 
-    @Column(columnDefinition = "jsonb")
-    private String experience;
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "experience", columnDefinition = "jsonb not null default '[]'::jsonb")
+    private List<Integer> experience;
 
-    @Column(columnDefinition = "jsonb")
-    private String partners;
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "partners", columnDefinition = "jsonb not null default '[]'::jsonb")
+    private List<Integer> partners;
 
-    @Column(columnDefinition = "jsonb")
-    private String genders;
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "genders", columnDefinition = "jsonb not null default '[]'::jsonb")
+    private List<Integer> genders;
 
-    @Column(columnDefinition = "jsonb")
-    private String races;
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "races", columnDefinition = "jsonb not null default '[]'::jsonb")
+    private List<Integer> races;
 
-    @Column(columnDefinition = "jsonb")
-    private String additionals;
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "additionals", columnDefinition = "jsonb not null default '[]'::jsonb")
+    private List<Integer> additionals;
 
-    @Column(columnDefinition = "jsonb")
-    private String credits;
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "credits", columnDefinition = "jsonb not null default '[]'::jsonb")
+    private List<Integer> credits;
 
-    // Audit
+    // -------- Audit
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -153,6 +162,32 @@ public class Profile {
         var now = Instant.now();
         createdAt = now;
         updatedAt = now;
+
+        // กัน NPE สำหรับลิสต์ jsonb
+        if (workLocations == null) {
+            workLocations = List.of();
+        }
+        if (unions == null) {
+            unions = List.of();
+        }
+        if (experience == null) {
+            experience = List.of();
+        }
+        if (partners == null) {
+            partners = List.of();
+        }
+        if (genders == null) {
+            genders = List.of();
+        }
+        if (races == null) {
+            races = List.of();
+        }
+        if (additionals == null) {
+            additionals = List.of();
+        }
+        if (credits == null) {
+            credits = List.of();
+        }
     }
 
     @PreUpdate

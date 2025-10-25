@@ -11,6 +11,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import jakarta.servlet.http.HttpServletRequest;
 
 public class JwtUtil {
 
@@ -94,4 +95,17 @@ public class JwtUtil {
     public long getExpMillis() {
         return expMillis;
     }
+
+    public String resolveFromCookie(HttpServletRequest req, String name) {
+        if (req.getCookies() == null) {
+            return null;
+        }
+        for (var c : req.getCookies()) {
+            if (name.equals(c.getName())) {
+                return c.getValue();
+            }
+        }
+        return null;
+    }
+
 }

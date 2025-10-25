@@ -1,9 +1,13 @@
 package com.thaitheatre.api.service;
 
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.stereotype.Service;
+
 import com.thaitheatre.api.model.entity.UserAccount;
 import com.thaitheatre.api.repository.UserRepository;
-import org.springframework.security.core.userdetails.*;
-import org.springframework.stereotype.Service;
 
 @Service
 public class UserDetailsServiceImpl implements UserDetailsService {
@@ -16,15 +20,21 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 
     @Override
     public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
-        UserAccount u = repo.findByEmail(email)
-                .orElseThrow(() -> new UsernameNotFoundException("User not found: " + email));
-        return toUserDetails(u);
+        var u = repo.findByEmail(email)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+        return User.withUsername(u.getEmail())
+                .password(u.getPasswordHash())
+                .roles("USER")
+                .build();
     }
 
     public UserDetails loadUserById(Long id) throws UsernameNotFoundException {
-        UserAccount u = repo.findById(id)
-                .orElseThrow(() -> new UsernameNotFoundException("User not found id=" + id));
-        return toUserDetails(u);
+        var u = repo.findById(id)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+        return User.withUsername(u.getEmail())
+                .password(u.getPasswordHash())
+                .roles("USER")
+                .build();
     }
 
     private UserDetails toUserDetails(UserAccount u) {
