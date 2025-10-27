@@ -1,35 +1,53 @@
 package com.thaitheatre.api.service;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.thaitheatre.api.common.DelFlag;
 import com.thaitheatre.api.common.RecordStatus;
 import com.thaitheatre.api.model.dto.ProfileRequest;
 import com.thaitheatre.api.model.dto.ProfileResponse;
 import com.thaitheatre.api.model.entity.Profile;
-import com.thaitheatre.api.repository.ProfileRepository;     // 👈 สมมุติชื่อเอนทิตีผู้ใช้
+import com.thaitheatre.api.repository.ProfileRepository;
 import com.thaitheatre.api.repository.UserRepository;
 
-import lombok.RequiredArgsConstructor;    // 👈 เพิ่ม repo ผู้ใช้
+import lombok.RequiredArgsConstructor;
 
 @Service
 @RequiredArgsConstructor
 public class ProfileService {
 
     private final ProfileRepository repo;
-    private final UserRepository userRepo;              // 👈 ฉีดเข้ามา
+    private final UserRepository userRepo;
+    private final FileStorageService fileStorageService;
 
+    @Value("${app.files.public-base-url}")
+    private String publicBaseUrl;
+
+    @Value("${app.files.profile-dir}")
+    private String profileDir; // ใช้ตอนลบไฟล์จริง
+
+    // ===== JSON only (ไม่ยุ่งกับรูป) =====
     @Transactional
     public ProfileResponse createOrUpdate(Long userId, ProfileRequest req) {
+        return createOrUpdate(userId, req, null);
+    }
+
+    // ===== JSON + รูป (multipart) =====
+    @Transactional
+    public ProfileResponse createOrUpdate(Long userId, ProfileRequest req, MultipartFile avatar) {
         var profile = repo.findByUserId(userId).orElseGet(() -> {
             var p = new Profile();
             p.setUserId(userId);
             p.setRecordStatus(RecordStatus.A);
             p.setDelFlag(DelFlag.N);
-            // กัน NPE สำหรับลิสต์ jsonb (เผื่อ DB ยังไม่มี DEFAULT)
             p.setWorkLocations(List.of());
             p.setUnions(List.of());
             p.setExperience(List.of());
@@ -41,46 +59,97 @@ public class ProfileService {
             return p;
         });
 
-        // map fields (primitive boolean โอเคอยู่แล้ว)
-        profile.setPrivateProfile(req.privateProfile());
-        profile.setProfileIsCompany(req.profileIsCompany());
+        // map fields
+        if (req != null) {
+            profile.setPrivateProfile(req.privateProfile());
+            profile.setProfileIsCompany(req.profileIsCompany());
+            profile.setFirstName(req.firstName());
+            profile.setLastName(req.lastName());
+            profile.setPronouns(req.pronouns());
+            profile.setTitle(req.title());
+            profile.setLocation(req.location());
+            profile.setEmail(req.email());
+            profile.setPhone(req.phone());
+            profile.setWebsite(req.website());
+            profile.setMultiLang(req.multiLang());
+            profile.setTravel(req.travel());
+            profile.setTour(req.tour());
+            profile.setAbout(req.about());
+            profile.setEducation(req.education());
+            profile.setVideo1(req.video1());
+            profile.setVideo2(req.video2());
+            profile.setWorkLocations(nvl(req.workLocations()));
+            profile.setUnions(nvl(req.unions()));
+            profile.setExperience(nvl(req.experience()));
+            profile.setPartners(nvl(req.partners()));
+            profile.setGenders(nvl(req.genders()));
+            profile.setRaces(nvl(req.races()));
+            profile.setAdditionals(nvl(req.additionals()));
+            profile.setCredits(nvl(req.credits()));
+        }
 
-        profile.setFirstName(req.firstName());
-        profile.setLastName(req.lastName());
-        profile.setPronouns(req.pronouns());
-
-        profile.setTitle(req.title());
-        profile.setLocation(req.location());
-
-        profile.setEmail(req.email());
-        profile.setPhone(req.phone());
-        profile.setWebsite(req.website());
-
-        profile.setMultiLang(req.multiLang());
-        profile.setTravel(req.travel());
-        profile.setTour(req.tour());
-
-        profile.setAbout(req.about());
-        profile.setEducation(req.education());
-
-        profile.setVideo1(req.video1());
-        profile.setVideo2(req.video2());
-
-        // ✅ jsonb: set เป็น List<Integer> ตรง ๆ
-        profile.setWorkLocations(nvl(req.workLocations()));
-        profile.setUnions(nvl(req.unions()));
-        profile.setExperience(nvl(req.experience()));
-        profile.setPartners(nvl(req.partners()));
-        profile.setGenders(nvl(req.genders()));
-        profile.setRaces(nvl(req.races()));
-        profile.setAdditionals(nvl(req.additionals()));
-        profile.setCredits(nvl(req.credits()));
+        // ✅ จัดการไฟล์รูป (เฉพาะเมื่อมีไฟล์ส่งมา)
+        if (avatar != null && !avatar.isEmpty()) {
+            try {
+                String newName = fileStorageService.saveProfileImage(avatar, profile.getAvatarFilename());
+                profile.setAvatarFilename(newName);
+            } catch (IllegalArgumentException e) {
+                throw e; // นามสกุลไม่ถูกต้อง
+            } catch (Exception e) {
+                throw new RuntimeException("อัปโหลดรูปไม่สำเร็จ", e);
+            }
+        }
 
         var saved = repo.save(profile);
 
-        // ✅ อัปเดตชื่อ–นามสกุลในตาราง users ภายใต้ทรานแซกชันเดียวกัน
-        syncUserName(userId, req.firstName(), req.lastName());
+        // อัปเดตชื่อจริง/นามสกุลใน users (เฉพาะกรณี req != null)
+        if (req != null) {
+            syncUserName(userId, req.firstName(), req.lastName());
+        }
 
+        return toResponse(saved);
+    }
+
+    // ===== เปลี่ยนรูปอย่างเดียว =====
+    @Transactional
+    public ProfileResponse updateAvatarOnly(Long userId, MultipartFile avatar) {
+        if (avatar == null || avatar.isEmpty()) {
+            throw new IllegalArgumentException("กรุณาเลือกไฟล์รูป");
+        }
+        var profile = repo.findByUserId(userId)
+                .orElseThrow(() -> new IllegalStateException("Profile not found for userId=" + userId));
+
+        try {
+            String newName = fileStorageService.saveProfileImage(avatar, profile.getAvatarFilename());
+            profile.setAvatarFilename(newName);
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException("อัปโหลดรูปไม่สำเร็จ", e);
+        }
+
+        var saved = repo.save(profile);
+        return toResponse(saved);
+    }
+
+    // ===== ลบรูปโปรไฟล์ =====
+    @Transactional
+    public ProfileResponse deleteAvatar(Long userId) {
+        var profile = repo.findByUserId(userId)
+                .orElseThrow(() -> new IllegalStateException("Profile not found for userId=" + userId));
+
+        String old = profile.getAvatarFilename();
+        profile.setAvatarFilename(null);
+        var saved = repo.save(profile);
+
+        // ลบไฟล์บนดิสก์ (ไม่ทำให้ธุรกรรม DB ล้ม ถ้าลบไฟล์พลาด)
+        if (old != null && !old.isBlank()) {
+            try {
+                Path p = Paths.get(profileDir).resolve(old);
+                Files.deleteIfExists(p);
+            } catch (Exception ignored) {
+            }
+        }
         return toResponse(saved);
     }
 
@@ -91,7 +160,6 @@ public class ProfileService {
             np.setUserId(userId);
             np.setRecordStatus(RecordStatus.A);
             np.setDelFlag(DelFlag.N);
-            // ค่าเริ่มต้นลิสต์ว่างเพื่อความปลอดภัย
             np.setWorkLocations(List.of());
             np.setUnions(List.of());
             np.setExperience(List.of());
@@ -105,15 +173,12 @@ public class ProfileService {
         return toResponse(p);
     }
 
-    /**
-     * อัปเดต first_name / last_name ในตาราง users เฉพาะเมื่อมีค่าใหม่และแตกต่าง
-     */
+    // -------------------- helpers --------------------
     private void syncUserName(Long userId, String firstName, String lastName) {
         var user = userRepo.findById(userId)
                 .orElseThrow(() -> new IllegalStateException("User not found for id=" + userId));
 
         boolean changed = false;
-
         if (firstName != null) {
             var fn = firstName.trim();
             if (!fn.isEmpty() && !fn.equals(user.getFirstName())) {
@@ -128,7 +193,6 @@ public class ProfileService {
                 changed = true;
             }
         }
-
         if (changed) {
             userRepo.save(user);
         }
@@ -136,9 +200,16 @@ public class ProfileService {
 
     private static List<Integer> nvl(List<Integer> v) {
         return v == null ? List.of() : v;
+        // หมายเหตุ: ถ้าตารางเป็น jsonb ที่อาจเก็บ null/[] ได้
     }
 
     private ProfileResponse toResponse(Profile p) {
+        String avatarUrl = null;
+        if (p.getAvatarFilename() != null && !p.getAvatarFilename().isBlank()) {
+            avatarUrl = publicBaseUrl.endsWith("/")
+                    ? publicBaseUrl + p.getAvatarFilename()
+                    : publicBaseUrl + "/" + p.getAvatarFilename();
+        }
         return new ProfileResponse(
                 p.getId(),
                 p.getUserId(),
@@ -168,7 +239,8 @@ public class ProfileService {
                 nvl(p.getAdditionals()),
                 nvl(p.getCredits()),
                 p.getCreatedAt(),
-                p.getUpdatedAt()
+                p.getUpdatedAt(),
+                avatarUrl
         );
     }
 }

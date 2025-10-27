@@ -32,7 +32,8 @@ public record ProfileResponse(
         List<Integer> additionals,
         List<Integer> credits,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        String avatarUrl
         ) {
 
 }

@@ -1,16 +1,20 @@
 package com.thaitheatre.api.controller;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.User;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController; // ใช้หา userId จาก email ถ้า principal ไม่มี id
+import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.thaitheatre.api.model.dto.ProfileRequest;
@@ -30,57 +34,84 @@ import lombok.RequiredArgsConstructor;
 public class ProfileController {
 
     private final ProfileService profileService;
-    private final UserRepository userRepository; // สำหรับ map email -> userId เมื่อจำเป็น
+    private final UserRepository userRepository;
 
-    @Operation(summary = "Create/Update profile (upsert)")
-    @PostMapping(path = "/save", consumes = "application/json", produces = "application/json")
+    // ===== JSON only (คงไว้ใช้ได้เหมือนเดิม) =====
+    @Operation(summary = "Create/Update profile (JSON only)")
+    @PostMapping(path = "/save", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public ProfileResponse saveProfile(@Valid @RequestBody ProfileRequest request) {
         Long userId = requireUserIdFromSecurityContext();
-        return profileService.createOrUpdate(userId, request);
+        return profileService.createOrUpdate(userId, request, null);
     }
 
-    @Operation(summary = "Update profile (explicit PUT)")
-    @PutMapping(path = "/me", consumes = "application/json", produces = "application/json")
+    @Operation(summary = "Update my profile (JSON only, PUT)")
+    @PutMapping(path = "/me", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public ProfileResponse updateMyProfile(@Valid @RequestBody ProfileRequest request) {
         Long userId = requireUserIdFromSecurityContext();
-        return profileService.createOrUpdate(userId, request);
+        return profileService.createOrUpdate(userId, request, null);
     }
 
+    // ===== Multipart (JSON + avatar) =====
+    @Operation(summary = "Create/Update profile with avatar (multipart/form-data)")
+    @PostMapping(path = "/save", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    public ProfileResponse saveProfileMultipart(
+            @RequestPart("json") @Valid ProfileRequest request,
+            @RequestPart(name = "avatar", required = false) MultipartFile avatar
+    ) {
+        Long userId = requireUserIdFromSecurityContext();
+        // ต้องมีเมธอด overload ใน ProfileService: createOrUpdate(Long, ProfileRequest, MultipartFile)
+        return profileService.createOrUpdate(userId, request, avatar);
+    }
+
+    @Operation(summary = "Update my profile with avatar (multipart/form-data, PUT)")
+    @PutMapping(path = "/me", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    public ProfileResponse updateMyProfileMultipart(
+            @RequestPart("json") @Valid ProfileRequest request,
+            @RequestPart(name = "avatar", required = false) MultipartFile avatar
+    ) {
+        Long userId = requireUserIdFromSecurityContext();
+        return profileService.createOrUpdate(userId, request, avatar);
+    }
+
+    // ===== Avatar only =====
+    @Operation(summary = "Upload/replace avatar only")
+    @PutMapping(path = "/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    public ProfileResponse uploadAvatarOnly(@RequestPart("avatar") MultipartFile avatar) {
+        Long userId = requireUserIdFromSecurityContext();
+        // ส่ง ProfileRequest เดิม (ไม่แก้อะไร) = null-safe ใน service
+        return profileService.updateAvatarOnly(userId, avatar);
+    }
+
+    @Operation(summary = "Delete avatar")
+    @DeleteMapping(path = "/avatar", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ProfileResponse deleteAvatar() {
+        Long userId = requireUserIdFromSecurityContext();
+        return profileService.deleteAvatar(userId);
+    }
+
+    // ===== Read my profile =====
     @Operation(summary = "Get my profile")
-    @GetMapping(path = "/me", produces = "application/json")
+    @GetMapping(path = "/me", produces = MediaType.APPLICATION_JSON_VALUE)
     public ProfileResponse getMyProfile(@AuthenticationPrincipal User principal) {
-        // ใช้ principal โดยตรง (Spring เติมให้จาก SecurityContext)
-        // principal.getUsername() = email/username จาก JWT
         Long userId = resolveUserId(principal);
         return profileService.getMy(userId);
     }
 
     // -------------------- helpers --------------------
-    /**
-     * ดึง userId จาก SecurityContext (ไม่อ่าน Header เอง)
-     */
     private Long requireUserIdFromSecurityContext() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated()) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthenticated");
         }
-        Object p = auth.getPrincipal();
-
-        // กรณี principal เป็น org.springframework.security.core.userdetails.User
-        String username = auth.getName(); // หรือ ((User)p).getUsername()
+        String username = auth.getName(); // อีเมล/ยูสเนมจาก Security
         return userRepository.findByEmail(username)
                 .map(u -> u.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User not found"));
     }
 
     private Long resolveUserId(User principal) {
-        // ถ้าคุณมี CustomUserDetails ให้เปลี่ยน method นี้ให้รองรับเช่นกัน
         return userRepository.findByEmail(principal.getUsername())
                 .map(u -> u.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User not found"));
     }
-
-    // ถ้ายังไม่มี CustomUserDetails ให้ลบ if (p instanceof CustomUserDetails) ทิ้งได้
-    // หรือสร้างคลาส:
-    // public interface CustomUserDetails extends UserDetails { Long getId(); }
 }

@@ -47,6 +47,9 @@ public class Profile {
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
+    @Column(name = "avatar_filename", length = 255)
+    private String avatarFilename;
+
     // -------- Options
     @Column(name = "private_profile", nullable = false)
     @ColumnDefault("false")

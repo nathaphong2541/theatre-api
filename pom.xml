@@ -11,7 +11,7 @@
     <groupId>com.thaitheatre</groupId>
     <artifactId>api</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <packaging>war</packaging>
+    <packaging>jar</packaging>
     <name>api</name>
     <description>Demo project for Spring Boot</description>
     <url/>
@@ -120,6 +120,12 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>commons-io</groupId>
+            <artifactId>commons-io</artifactId>
+            <version>2.15.1</version> <!-- ใช้เวอร์ชันล่าสุด -->
         </dependency>
     </dependencies>
 
