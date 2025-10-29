@@ -203,7 +203,7 @@ public class ProfileService {
         // หมายเหตุ: ถ้าตารางเป็น jsonb ที่อาจเก็บ null/[] ได้
     }
 
-    private ProfileResponse toResponse(Profile p) {
+    public ProfileResponse toResponse(Profile p) {
         String avatarUrl = null;
         if (p.getAvatarFilename() != null && !p.getAvatarFilename().isBlank()) {
             avatarUrl = publicBaseUrl.endsWith("/")
@@ -211,36 +211,15 @@ public class ProfileService {
                     : publicBaseUrl + "/" + p.getAvatarFilename();
         }
         return new ProfileResponse(
-                p.getId(),
-                p.getUserId(),
-                p.isPrivateProfile(),
-                p.isProfileIsCompany(),
-                p.getFirstName(),
-                p.getLastName(),
-                p.getPronouns(),
-                p.getTitle(),
-                p.getLocation(),
-                p.getEmail(),
-                p.getPhone(),
-                p.getWebsite(),
-                p.isMultiLang(),
-                p.getTravel(),
-                p.getTour(),
-                p.getAbout(),
-                p.getEducation(),
-                p.getVideo1(),
-                p.getVideo2(),
-                nvl(p.getWorkLocations()),
-                nvl(p.getUnions()),
-                nvl(p.getExperience()),
-                nvl(p.getPartners()),
-                nvl(p.getGenders()),
-                nvl(p.getRaces()),
-                nvl(p.getAdditionals()),
-                nvl(p.getCredits()),
-                p.getCreatedAt(),
-                p.getUpdatedAt(),
-                avatarUrl
+                p.getId(), p.getUserId(), p.isPrivateProfile(), p.isProfileIsCompany(),
+                p.getFirstName(), p.getLastName(), p.getPronouns(), p.getTitle(),
+                p.getLocation(), p.getEmail(), p.getPhone(), p.getWebsite(),
+                p.isMultiLang(), p.getTravel(), p.getTour(), p.getAbout(), p.getEducation(),
+                p.getVideo1(), p.getVideo2(),
+                nvl(p.getWorkLocations()), nvl(p.getUnions()), nvl(p.getExperience()),
+                nvl(p.getPartners()), nvl(p.getGenders()), nvl(p.getRaces()),
+                nvl(p.getAdditionals()), nvl(p.getCredits()),
+                p.getCreatedAt(), p.getUpdatedAt(), avatarUrl
         );
     }
 }

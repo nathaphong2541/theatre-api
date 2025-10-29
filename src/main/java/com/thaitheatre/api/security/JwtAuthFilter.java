@@ -35,6 +35,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 // ✅ อนุญาตเฉพาะ public endpoints
                 || matcher.match("/api/auth/register", path)
                 || matcher.match("/api/auth/login", path)
+                || matcher.match("/api/profiles", path)
                 || matcher.match("/api/auth/forgot-password", path)
                 || matcher.match("/api/auth/reset-password", path)
                 // ✅ swagger / error / actuator
