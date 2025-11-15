@@ -1,6 +1,7 @@
 package com.thaitheatre.api.model.entity;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.hibernate.annotations.ColumnDefault;
@@ -10,6 +11,7 @@ import org.hibernate.type.SqlTypes;
 import com.thaitheatre.api.common.DelFlag;
 import com.thaitheatre.api.common.RecordStatus;
 
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -17,6 +19,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
@@ -26,12 +29,10 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import com.thaitheatre.api.model.dto.ProfileCredit;
 
 @Entity
-@Table(
-        name = "profiles",
-        uniqueConstraints = @UniqueConstraint(name = "uk_profiles_user_id", columnNames = "user_id")
-)
+@Table(name = "profiles", uniqueConstraints = @UniqueConstraint(name = "uk_profiles_user_id", columnNames = "user_id"))
 @Getter
 @Setter
 @Builder
@@ -143,7 +144,23 @@ public class Profile {
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "credits", columnDefinition = "jsonb not null default '[]'::jsonb")
-    private List<Integer> credits;
+    private List<ProfileCredit> credits;
+
+    @Column(name = "resume_filename")
+    private String resumeFilename; // ✅ 1 resume ต่อคน
+
+    @OneToMany(mappedBy = "profile", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<ProfilePerformance> performances = new ArrayList<>(); // ✅ รูป performance สูงสุด 6 รูป
+
+    // -------- Social (ใหม่)
+    @Column(length = 255)
+    private String linkedin; // LinkedIn
+    @Column(length = 255)
+    private String facebook; // Facebook
+    @Column(length = 255)
+    private String instagram; // Instagram
+    @Column(length = 255, name = "twitter")
+    private String twitter; // X / Twitter
 
     // -------- Audit
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -187,9 +204,6 @@ public class Profile {
         }
         if (additionals == null) {
             additionals = List.of();
-        }
-        if (credits == null) {
-            credits = List.of();
         }
     }
 

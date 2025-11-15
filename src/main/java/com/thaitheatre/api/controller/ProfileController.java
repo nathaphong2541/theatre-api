@@ -8,6 +8,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -56,10 +57,8 @@ public class ProfileController {
     @PostMapping(path = "/save", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public ProfileResponse saveProfileMultipart(
             @RequestPart("json") @Valid ProfileRequest request,
-            @RequestPart(name = "avatar", required = false) MultipartFile avatar
-    ) {
+            @RequestPart(name = "avatar", required = false) MultipartFile avatar) {
         Long userId = requireUserIdFromSecurityContext();
-        // ต้องมีเมธอด overload ใน ProfileService: createOrUpdate(Long, ProfileRequest, MultipartFile)
         return profileService.createOrUpdate(userId, request, avatar);
     }
 
@@ -67,8 +66,7 @@ public class ProfileController {
     @PutMapping(path = "/me", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public ProfileResponse updateMyProfileMultipart(
             @RequestPart("json") @Valid ProfileRequest request,
-            @RequestPart(name = "avatar", required = false) MultipartFile avatar
-    ) {
+            @RequestPart(name = "avatar", required = false) MultipartFile avatar) {
         Long userId = requireUserIdFromSecurityContext();
         return profileService.createOrUpdate(userId, request, avatar);
     }
@@ -78,7 +76,6 @@ public class ProfileController {
     @PutMapping(path = "/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public ProfileResponse uploadAvatarOnly(@RequestPart("avatar") MultipartFile avatar) {
         Long userId = requireUserIdFromSecurityContext();
-        // ส่ง ProfileRequest เดิม (ไม่แก้อะไร) = null-safe ใน service
         return profileService.updateAvatarOnly(userId, avatar);
     }
 
@@ -113,5 +110,35 @@ public class ProfileController {
         return userRepository.findByEmail(principal.getUsername())
                 .map(u -> u.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User not found"));
+    }
+
+    // ===== Resume =====
+    @Operation(summary = "Upload/replace resume (JPG, PNG, GIF, WEBP, PDF <= 10MB)")
+    @PostMapping(value = "/resume", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    public ProfileResponse uploadResume(@RequestPart("file") MultipartFile file) {
+        Long userId = requireUserIdFromSecurityContext();
+        return profileService.updateResume(userId, file);
+    }
+
+    @Operation(summary = "Delete resume")
+    @DeleteMapping(value = "/resume", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ProfileResponse deleteResume() {
+        Long userId = requireUserIdFromSecurityContext();
+        return profileService.deleteResume(userId);
+    }
+
+    // ===== Performance images (max 6) =====
+    @Operation(summary = "Upload performance images (JPG, PNG, GIF, WEBP, max 6 per profile)")
+    @PostMapping(value = "/performances", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    public ProfileResponse uploadPerformances(@RequestPart("files") MultipartFile[] files) {
+        Long userId = requireUserIdFromSecurityContext();
+        return profileService.addPerformances(userId, files);
+    }
+
+    @Operation(summary = "Delete one performance image")
+    @DeleteMapping(value = "/performances/{id}", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ProfileResponse deletePerformance(@PathVariable Long id) {
+        Long userId = requireUserIdFromSecurityContext();
+        return profileService.deletePerformance(userId, id);
     }
 }

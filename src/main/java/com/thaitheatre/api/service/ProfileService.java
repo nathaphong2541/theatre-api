@@ -17,6 +17,7 @@ import com.thaitheatre.api.common.RecordStatus;
 import com.thaitheatre.api.model.dto.ProfileRequest;
 import com.thaitheatre.api.model.dto.ProfileResponse;
 import com.thaitheatre.api.model.entity.Profile;
+import com.thaitheatre.api.model.entity.ProfilePerformance;
 import com.thaitheatre.api.repository.ProfileRepository;
 import com.thaitheatre.api.repository.UserRepository;
 
@@ -73,6 +74,13 @@ public class ProfileService {
             profile.setEmail(req.email());
             profile.setPhone(req.phone());
             profile.setWebsite(req.website());
+
+            // 🔹 social (ใหม่)
+            profile.setLinkedin(req.linkedin());
+            profile.setFacebook(req.facebook());
+            profile.setInstagram(req.instagram());
+            profile.setTwitter(req.twitter());
+
             profile.setMultiLang(req.multiLang());
             profile.setTravel(req.travel());
             profile.setTour(req.tour());
@@ -200,29 +208,69 @@ public class ProfileService {
         }
     }
 
-    private static List<Integer> nvl(List<Integer> v) {
+    private static <T> List<T> nvl(List<T> v) {
         return v == null ? List.of() : v;
-        // หมายเหตุ: ถ้าตารางเป็น jsonb ที่อาจเก็บ null/[] ได้
     }
 
     public ProfileResponse toResponse(Profile p) {
         String avatarUrl = null;
         if (p.getAvatarFilename() != null && !p.getAvatarFilename().isBlank()) {
-            avatarUrl = publicBaseUrl.endsWith("/")
-                    ? publicBaseUrl + p.getAvatarFilename()
-                    : publicBaseUrl + "/" + p.getAvatarFilename();
+            avatarUrl = buildUrl(p.getAvatarFilename());
         }
+
+        String resumeUrl = null;
+        if (p.getResumeFilename() != null && !p.getResumeFilename().isBlank()) {
+            resumeUrl = buildUrl("resume/" + p.getResumeFilename());
+        }
+
+        List<String> performanceUrls = p.getPerformances().stream()
+                .map(perf -> buildUrl("performance/" + perf.getFilename()))
+                .toList();
+
         return new ProfileResponse(
-                p.getId(), p.getUserId(), p.isPrivateProfile(), p.isProfileIsCompany(),
-                p.getFirstName(), p.getLastName(), p.getPronouns(), p.getTitle(),
-                p.getLocation(), p.getEmail(), p.getPhone(), p.getWebsite(),
-                p.isMultiLang(), p.getTravel(), p.getTour(), p.getAbout(), p.getEducation(),
-                p.getVideo1(), p.getVideo2(),
-                nvl(p.getWorkLocations()), nvl(p.getUnions()), nvl(p.getExperience()),
-                nvl(p.getPartners()), nvl(p.getGenders()), nvl(p.getRaces()),
-                nvl(p.getAdditionals()), nvl(p.getCredits()),
-                p.getCreatedAt(), p.getUpdatedAt(), avatarUrl
-        );
+                p.getId(),
+                p.getUserId(),
+                p.isPrivateProfile(),
+                p.isProfileIsCompany(),
+                p.getFirstName(),
+                p.getLastName(),
+                p.getPronouns(),
+                p.getTitle(),
+                p.getLocation(),
+                p.getEmail(),
+                p.getPhone(),
+                p.getWebsite(),
+                // 🔹 social (ใหม่)
+                p.getLinkedin(),
+                p.getFacebook(),
+                p.getInstagram(),
+                p.getTwitter(),
+                p.isMultiLang(),
+                p.getTravel(),
+                p.getTour(),
+                p.getAbout(),
+                p.getEducation(),
+                p.getVideo1(),
+                p.getVideo2(),
+                nvl(p.getWorkLocations()),
+                nvl(p.getUnions()),
+                nvl(p.getExperience()),
+                nvl(p.getPartners()),
+                nvl(p.getGenders()),
+                nvl(p.getRaces()),
+                nvl(p.getAdditionals()),
+                nvl(p.getCredits()),
+                p.getCreatedAt(),
+                p.getUpdatedAt(),
+                avatarUrl,
+                resumeUrl,
+                performanceUrls);
+    }
+
+    private String buildUrl(String filename) {
+        return publicBaseUrl.endsWith("/")
+                ? publicBaseUrl + filename
+                : publicBaseUrl + "/" + filename;
     }
 
     @Transactional(readOnly = true)
@@ -230,5 +278,119 @@ public class ProfileService {
         return repo.findByUserId(userId)
                 .map(this::toResponse)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Profile not found"));
+    }
+
+    @Transactional
+    public ProfileResponse updateResume(Long userId, MultipartFile resume) {
+        if (resume == null || resume.isEmpty()) {
+            throw new IllegalArgumentException("กรุณาเลือกไฟล์ resume");
+        }
+
+        var profile = repo.findByUserId(userId)
+                .orElseThrow(() -> new IllegalStateException("Profile not found for userId=" + userId));
+
+        try {
+            String newName = fileStorageService.saveResume(resume, profile.getResumeFilename());
+            profile.setResumeFilename(newName);
+        } catch (IllegalArgumentException e) {
+            // นามสกุลผิด / size เกิน ให้โยนต่อเป็น 400
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException("อัปโหลด resume ไม่สำเร็จ", e);
+        }
+
+        var saved = repo.save(profile);
+        return toResponse(saved);
+    }
+
+    @Transactional
+    public ProfileResponse deleteResume(Long userId) {
+        var profile = repo.findByUserId(userId)
+                .orElseThrow(() -> new IllegalStateException("Profile not found for userId=" + userId));
+
+        String old = profile.getResumeFilename();
+        profile.setResumeFilename(null);
+        var saved = repo.save(profile);
+
+        if (old != null && !old.isBlank()) {
+            try {
+                Path p = Paths.get(profileDir, "resume").resolve(old);
+                Files.deleteIfExists(p);
+            } catch (Exception ignored) {
+            }
+        }
+        return toResponse(saved);
+    }
+
+    private static final int MAX_PERFORMANCE_PER_PROFILE = 6;
+
+    @Transactional
+    public ProfileResponse addPerformances(Long userId, MultipartFile[] files) {
+        if (files == null || files.length == 0) {
+            throw new IllegalArgumentException("กรุณาเลือกไฟล์ performance อย่างน้อย 1 ไฟล์");
+        }
+
+        var profile = repo.findByUserId(userId)
+                .orElseThrow(() -> new IllegalStateException("Profile not found for userId=" + userId));
+
+        int current = profile.getPerformances().size();
+        if (current + files.length > MAX_PERFORMANCE_PER_PROFILE) {
+            throw new IllegalArgumentException(
+                    "อัปโหลด performance ได้ไม่เกิน " + MAX_PERFORMANCE_PER_PROFILE + " ไฟล์ต่อคน");
+        }
+
+        int baseOrder = current; // ใช้เป็น sortOrder ต่อจากของเดิม
+
+        for (int i = 0; i < files.length; i++) {
+            MultipartFile f = files[i];
+            if (f == null || f.isEmpty())
+                continue;
+
+            try {
+                String filename = fileStorageService.savePerformanceImage(f);
+                var perf = new ProfilePerformance();
+                perf.setProfile(profile);
+                perf.setFilename(filename);
+                perf.setSortOrder(baseOrder + i);
+                profile.getPerformances().add(perf);
+            } catch (IllegalArgumentException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new RuntimeException("อัปโหลด performance ไม่สำเร็จ", e);
+            }
+        }
+
+        var saved = repo.save(profile);
+        return toResponse(saved);
+    }
+
+    @Transactional
+    public ProfileResponse deletePerformance(Long userId, Long performanceId) {
+        var profile = repo.findByUserId(userId)
+                .orElseThrow(() -> new IllegalStateException("Profile not found for userId=" + userId));
+
+        var it = profile.getPerformances().iterator();
+        String filenameToDelete = null;
+
+        while (it.hasNext()) {
+            var perf = it.next();
+            if (perf.getId().equals(performanceId)) {
+                filenameToDelete = perf.getFilename();
+                it.remove(); // orphanRemoval = true ทำให้ลบ row ใน DB
+                break;
+            }
+        }
+
+        var saved = repo.save(profile);
+
+        if (filenameToDelete != null) {
+            try {
+                Path p = Paths.get(profileDir, "performance").resolve(filenameToDelete);
+                Files.deleteIfExists(p);
+            } catch (Exception ignored) {
+            }
+        }
+
+        return toResponse(saved);
     }
 }
