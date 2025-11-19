@@ -8,9 +8,9 @@ import lombok.Data;
 public class ProfileSearchRequest {
 
     // ----- free text -----
-    private String q;  // ค้นหลายช่องพร้อมกัน
+    private String q;
 
-    // ----- options / flags -----
+    // ----- flags -----
     private Boolean privateProfile;
     private Boolean profileIsCompany;
     private Boolean multiLang;
@@ -31,7 +31,7 @@ public class ProfileSearchRequest {
     private String video1;
     private String video2;
 
-    // ----- lists (ค้นแบบ "มีรายการใดรายการหนึ่งตรงกัน") -----
+    // ----- lists -----
     private List<Integer> workLocations;
     private List<Integer> unions;
     private List<Integer> experience;
@@ -39,5 +39,13 @@ public class ProfileSearchRequest {
     private List<Integer> genders;
     private List<Integer> races;
     private List<Integer> additionals;
-    private List<Integer> credits;
+
+    // ----- credits filters -----
+    // free text ค้นจาก company/title/venue/jobLocation
+    private String creditText;
+
+    // filter ตาม posIds / deptIds / skillIds ใน credits
+    private List<Integer> creditPosIds;
+    private List<Integer> creditDeptIds;
+    private List<Integer> creditSkillIds;
 }

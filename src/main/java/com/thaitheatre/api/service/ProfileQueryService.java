@@ -1,5 +1,6 @@
 package com.thaitheatre.api.service;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.springframework.data.domain.Page;
@@ -15,6 +16,7 @@ import com.thaitheatre.api.model.entity.Profile;
 import com.thaitheatre.api.repository.ProfileRepository;
 
 import jakarta.persistence.criteria.JoinType;
+import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 
 @Service
@@ -22,30 +24,32 @@ import lombok.RequiredArgsConstructor;
 public class ProfileQueryService {
 
     private final ProfileRepository repo;
-    private final ProfileService profileService; // ใช้ map -> ProfileResponse (toResponse) (ต้องเป็น public)
+    private final ProfileService profileService;
 
     public Page<ProfileResponse> search(ProfileSearchRequest rq, Pageable pageable) {
-        // กัน null
         if (rq == null) {
             rq = new ProfileSearchRequest();
         }
 
-        // ใส่ default pageable ถ้าไม่ได้ส่งมา หรือไม่ได้ sort
+        // default pageable
         if (pageable == null) {
             pageable = PageRequest.of(0, 20, Sort.by(Sort.Direction.DESC, "updatedAt"));
         } else if (pageable.getSort().isUnsorted()) {
-            pageable = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(),
+            pageable = PageRequest.of(
+                    pageable.getPageNumber(),
+                    pageable.getPageSize(),
                     Sort.by(Sort.Direction.DESC, "updatedAt"));
         }
 
         Specification<Profile> spec = Specification.where((root, cq, cb) -> {
-            cq.distinct(true); // ป้องกันซ้ำเมื่อมี join
+            cq.distinct(true);
             return cb.conjunction();
         });
 
-        // ----- free text q (ค้นหลายช่อง) -----
+        // ---------- free text q (ไม่แตะ credits เลย เพื่อกันปัญหา) ----------
         if (hasText(rq.getQ())) {
             String like = contains(rq.getQ());
+
             spec = spec.and((root, cq, cb) -> cb.or(
                     cb.like(cb.lower(root.get("firstName")), like),
                     cb.like(cb.lower(root.get("lastName")), like),
@@ -61,6 +65,22 @@ public class ProfileQueryService {
                     cb.like(cb.lower(root.get("video2")), like)
             ));
         }
+
+        // ---------- creditText (ค้นจาก credits JSON อย่างเดียว) ----------
+        if (hasText(rq.getCreditText())) {
+            String rawLike = "%" + rq.getCreditText().trim() + "%";
+
+            spec = spec.and((root, cq, cb) -> {
+                // cast jsonb -> text แล้วค่อย LIKE
+                var creditsText = cb.toString(root.get("credits"));
+                return cb.like(creditsText, rawLike);
+            });
+        }
+
+        // ---------- credit ids filters (dept / pos / skill) ----------
+        spec = andCreditsJsonIdsContains(spec, "deptIds", rq.getCreditDeptIds());
+        spec = andCreditsJsonIdsContains(spec, "posIds", rq.getCreditPosIds());
+        spec = andCreditsJsonIdsContains(spec, "skillIds", rq.getCreditSkillIds());
 
         // ----- flags (Boolean) -----
         spec = andEq(spec, "privateProfile", rq.getPrivateProfile());
@@ -91,13 +111,52 @@ public class ProfileQueryService {
         spec = andAnyMatch(spec, "genders", rq.getGenders());
         spec = andAnyMatch(spec, "races", rq.getRaces());
         spec = andAnyMatch(spec, "additionals", rq.getAdditionals());
-        spec = andAnyMatch(spec, "credits", rq.getCredits());
 
         var page = repo.findAll(spec, pageable);
-        return page.map(profileService::toResponse); // ต้อง public
+        return page.map(profileService::toResponse);
     }
 
-    // ---------- helpers ----------
+    // ---------- credits JSON contains ids ----------
+    private static Specification<Profile> andCreditsJsonIdsContains(
+            Specification<Profile> base,
+            String jsonKey,
+            List<Integer> ids) {
+
+        if (ids == null || ids.isEmpty()) {
+            return base;
+        }
+
+        return base.and((root, cq, cb) -> {
+
+            List<Predicate> orPreds = new ArrayList<>();
+
+            for (Integer id : ids) {
+                if (id == null) {
+                    continue;
+                }
+
+                // path: หา element ไหนก็ได้ใน array ที่มี <jsonKey> และใน array นั้นมีค่า == id
+                // เช่น $[*].deptIds ? (@ == 1)
+                String path = "$[*]." + jsonKey + " ? (@ == " + id + ")";
+
+                orPreds.add(
+                        cb.isTrue(
+                                cb.function(
+                                        "jsonb_path_exists",
+                                        Boolean.class,
+                                        root.get("credits"),
+                                        cb.literal(path)
+                                )
+                        )
+                );
+            }
+
+            // ถ้าใน list มีหลาย id → OR กัน (มีอันใดอันหนึ่งก็พอ)
+            return cb.or(orPreds.toArray(Predicate[]::new));
+        });
+    }
+
+    // ---------- helpers (ของเดิมใช้ได้เลย) ----------
     private static boolean hasText(String s) {
         return s != null && !s.trim().isEmpty();
     }
@@ -121,19 +180,12 @@ public class ProfileQueryService {
         return base.and((root, cq, cb) -> cb.like(cb.lower(root.get(field)), like));
     }
 
-    /**
-     * ค้นหาลิสต์แบบ "มีตัวใดตัวหนึ่งตรงกัน (overlap)" ใช้กับ @ElementCollection
-     * (ตารางลูก) เช่น field 'workLocations'
-     */
     private static Specification<Profile> andAnyMatch(Specification<Profile> base, String field, List<Integer> values) {
         if (values == null || values.isEmpty()) {
             return base;
         }
         return base.and((root, cq, cb) -> {
-            // join กับ collection ชื่อเดียวกับ field
             var join = root.join(field, JoinType.LEFT);
-            // NOTE: สำหรับ ElementCollection ของ basic type
-            // join เป็น path ของ element ได้เลย
             return join.in(values);
         });
     }
