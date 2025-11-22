@@ -39,4 +39,47 @@ public class MailService {
 
         mailSender.send(msg);
     }
+
+    public void sendAccountDeleted(String toEmail, String fullName) {
+        SimpleMailMessage msg = new SimpleMailMessage();
+        msg.setTo(toEmail);
+        msg.setFrom(String.format("Thai Theatre Team <%s>", fromAddress));
+        msg.setSubject("บัญชีของคุณถูกลบเรียบร้อยแล้ว");
+
+        msg.setText("""
+            สวัสดีคุณ %s,
+
+            บัญชีของคุณในระบบ Thai Theatre ถูกลบเรียบร้อยแล้วตามคำร้องขอของคุณ
+            ข้อมูลของคุณจะถูกปิดการใช้งานและลบออกจากระบบตามนโยบายความเป็นส่วนตัว
+
+            หากคุณไม่ได้เป็นผู้ดำเนินการ กรุณาติดต่อผู้ดูแลระบบทันทีที่ support@thaitheatre.org
+
+            ขอแสดงความนับถือ,
+            Thai Theatre Team
+            """.formatted(fullName));
+
+        mailSender.send(msg);
+    }
+
+    public void sendEmailChanged(String oldEmail, String newEmail, String fullName) {
+        SimpleMailMessage msg = new SimpleMailMessage();
+        msg.setTo(oldEmail); // แจ้งทางอีเมลเก่าก่อน
+        msg.setFrom(String.format("Thai Theatre Team <%s>", fromAddress));
+        msg.setSubject("มีการเปลี่ยนอีเมลบัญชีของคุณ");
+
+        msg.setText("""
+            สวัสดีคุณ %s,
+
+            คุณได้ทำการเปลี่ยนอีเมลสำหรับบัญชี Thai Theatre ของคุณ
+            อีเมลใหม่คือ: %s
+
+            หากคุณไม่ได้เปลี่ยนอีเมลด้วยตนเอง กรุณาติดต่อผู้ดูแลระบบโดยทันทีที่ support@thaitheatre.org
+
+            ขอแสดงความนับถือ,
+            Thai Theatre Team
+            """.formatted(fullName, newEmail));
+
+        mailSender.send(msg);
+    }
+
 }

@@ -54,8 +54,9 @@ public class PasswordResetService {
     }
 
     // generate token, save hashed version, send email
-    public void requestPasswordReset(String email, String appBaseUrl) {
-        userRepo.findByEmail(email.toLowerCase()).ifPresent(user -> {
+    // import java.util.Optional;
+    public Optional<String> requestPasswordReset(String email, String appBaseUrl) {
+        return userRepo.findByEmail(email.toLowerCase()).map(user -> {
             String token = generateToken();
             String tokenHash = hashToken(token);
             Instant expiresAt = Instant.now().plus(tokenExpiryMinutes, ChronoUnit.MINUTES);
@@ -68,12 +69,15 @@ public class PasswordResetService {
             tokenRepo.save(prt);
 
             String resetUrl = appBaseUrl
-                    + "/reset-password?token=" + urlEncode(token)
+                    + "/en/auth/new-password"
+                    + "?token=" + urlEncode(token)
                     + "&email=" + urlEncode(email);
 
             sendResetEmail(user.getEmail(), user.getFirstName(), resetUrl);
+
+            // คืนค่าคีย์ (raw token) ให้ controller ถ้าต้องการเอาไปส่งต่อ
+            return token;
         });
-        // ไม่บอกว่าอีเมลมี/ไม่มี เพื่อความปลอดภัย
     }
 
     private String generateToken() {
@@ -146,29 +150,55 @@ public class PasswordResetService {
 
     @Transactional
     public boolean resetPassword(String email, String token, String newPassword) {
-        Optional<UserAccount> ou = userRepo.findByEmail(email.toLowerCase());
-        if (ou.isEmpty()) {
+        if (token == null || token.isBlank()) {
             return false;
         }
 
-        UserAccount user = ou.get();
+        String candidateHash = hashToken(token);
+
+        // ถ้ามี email → ใช้ logic เดิม (กันกรณีต้องการตรวจ email ให้ตรงกัน)
+        if (email != null && !email.isBlank()) {
+            Optional<UserAccount> ou = userRepo.findByEmail(email.toLowerCase());
+            if (ou.isEmpty()) {
+                return false;
+            }
+
+            UserAccount user = ou.get();
+            Optional<PasswordResetToken> opt
+                    = tokenRepo.findByUserAndUsedFalseAndExpiresAtAfter(user, Instant.now());
+            if (opt.isEmpty()) {
+                return false;
+            }
+
+            PasswordResetToken prt = opt.get();
+            if (!candidateHash.equalsIgnoreCase(prt.getTokenHash())) {
+                return false;
+            }
+
+            user.setPasswordHash(passwordEncoder.encode(newPassword));
+            userRepo.save(user);
+
+            prt.setUsed(true);
+            tokenRepo.save(prt);
+            return true;
+        }
+
+        // 🔥 กรณี email เป็น null หรือ "" → หา user จาก token โดยตรง
         Optional<PasswordResetToken> opt
-                = tokenRepo.findByUserAndUsedFalseAndExpiresAtAfter(user, Instant.now());
+                = tokenRepo.findByTokenHashAndUsedFalseAndExpiresAtAfter(candidateHash, Instant.now());
         if (opt.isEmpty()) {
             return false;
         }
 
         PasswordResetToken prt = opt.get();
-        String candidateHash = hashToken(token);
-        if (!candidateHash.equalsIgnoreCase(prt.getTokenHash())) {
-            return false;
-        }
+        UserAccount user = prt.getUser();
 
         user.setPasswordHash(passwordEncoder.encode(newPassword));
         userRepo.save(user);
 
         prt.setUsed(true);
         tokenRepo.save(prt);
+
         return true;
     }
 }

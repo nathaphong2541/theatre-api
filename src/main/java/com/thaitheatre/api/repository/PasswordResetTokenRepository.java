@@ -10,8 +10,14 @@ import com.thaitheatre.api.model.entity.UserAccount;
 
 public interface PasswordResetTokenRepository extends JpaRepository<PasswordResetToken, Long> {
 
-    Optional<PasswordResetToken> findFirstByUserAndUsedFalseOrderByCreatedAtDesc(UserAccount user);
+    Optional<PasswordResetToken> findByUserAndUsedFalseAndExpiresAtAfter(
+            UserAccount user,
+            Instant now
+    );
 
-    Optional<PasswordResetToken> findByUserAndUsedFalseAndExpiresAtAfter(UserAccount user, Instant now);
-    // we will locate by user and check token with hash
+    // ✅ ใหม่: หาโดย tokenHash + not used + ยังไม่หมดอายุ
+    Optional<PasswordResetToken> findByTokenHashAndUsedFalseAndExpiresAtAfter(
+            String tokenHash,
+            Instant now
+    );
 }

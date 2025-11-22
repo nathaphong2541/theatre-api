@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.thaitheatre.api.model.dto.AuthResponse;
+import com.thaitheatre.api.model.dto.ChangeEmailRequest;
 import com.thaitheatre.api.model.dto.ForgotPasswordRequest;
 import com.thaitheatre.api.model.dto.GenericResponse;
 import com.thaitheatre.api.model.dto.LoginRequest;
@@ -131,12 +132,18 @@ public class AuthController {
     // --- Forgot password (ไม่ต้องใช้ token)
     @PostMapping("/forgot-password")
     @Operation(summary = "Request password reset (email)")
-    public ResponseEntity<GenericResponse> forgotPassword(@RequestBody ForgotPasswordRequest rq) {
-        prs.requestPasswordReset(rq.email(), frontendBase);
-        return ResponseEntity.ok(new GenericResponse("If an account exists, a reset link has been sent."));
+    public ResponseEntity<?> forgotPassword(@RequestBody ForgotPasswordRequest rq) {
+
+        var optToken = prs.requestPasswordReset(rq.email(), frontendBase);
+
+        // ✅ เวอร์ชัน Dev: ส่ง token กลับไปด้วย (เพื่อ debug / ทดสอบใน Postman)
+        // ⚠ แนะนำให้ตัด debugToken ทิ้งตอนขึ้น production
+        return ResponseEntity.ok(Map.of(
+                "message", "If an account exists, a reset link has been sent.",
+                "debugToken", optToken.orElse(null)
+        ));
     }
 
-    // --- Reset password (ไม่ต้องใช้ token)
     @PostMapping("/reset-password")
     @Operation(summary = "Reset password by email + token")
     public ResponseEntity<GenericResponse> resetPassword(@RequestBody ResetPasswordRequest rq) {
@@ -146,5 +153,57 @@ public class AuthController {
                     .body(new GenericResponse("Invalid or expired token/email."));
         }
         return ResponseEntity.ok(new GenericResponse("Password has been reset successfully."));
+    }
+
+    @PostMapping("/delete-account")
+    @Operation(
+            summary = "Delete current user account (soft delete)",
+            security = @SecurityRequirement(name = "bearerAuth")
+    )
+    public ResponseEntity<?> deleteAccount(HttpServletResponse response) {
+        var authn = SecurityContextHolder.getContext().getAuthentication();
+        if (authn == null || !authn.isAuthenticated() || "anonymousUser".equals(authn.getName())) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "Unauthorized"));
+        }
+
+        String email = authn.getName(); // ตอนนี้ authName ยังใช้ email เหมือน /me
+
+        auth.deleteAccountByEmail(email);
+
+        // เคลียร์ cookie เหมือน logout
+        ResponseCookie cleared = ResponseCookie.from(COOKIE_NAME, "")
+                .httpOnly(true)
+                .secure(cookieSecure)
+                .sameSite("Strict")
+                .path("/")
+                .maxAge(0)
+                .build();
+        response.addHeader(HttpHeaders.SET_COOKIE, cleared.toString());
+
+        return ResponseEntity.ok(Map.of("message", "Account deleted successfully"));
+    }
+
+    // --- Change email (ต้อง login)
+    @PostMapping("/change-email")
+    @Operation(
+            summary = "Change email for current user",
+            security = @SecurityRequirement(name = "bearerAuth")
+    )
+    public ResponseEntity<?> changeEmail(@RequestBody ChangeEmailRequest rq) {
+        var authn = SecurityContextHolder.getContext().getAuthentication();
+        if (authn == null || !authn.isAuthenticated() || "anonymousUser".equals(authn.getName())) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "Unauthorized"));
+        }
+
+        String currentEmail = authn.getName();
+
+        var updatedProfile = auth.changeEmail(currentEmail, rq.newEmail(), rq.currentPassword());
+
+        return ResponseEntity.ok(Map.of(
+                "message", "Email changed successfully. Please use the new email next time you login.",
+                "user", updatedProfile
+        ));
     }
 }

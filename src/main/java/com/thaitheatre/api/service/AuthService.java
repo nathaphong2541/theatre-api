@@ -84,4 +84,56 @@ public class AuthService {
                 user.getEmail(), user.getPolicyConfirmed()
         ));
     }
+
+    public void deleteAccountByEmail(String email) {
+        var user = repo.findByEmail(email)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+        // ✅ ทำ soft-delete ตาม enum ที่คุณใช้
+        user.setRecordStatus(RecordStatus.I);
+        user.setDelFlag(DelFlag.Y);
+
+        repo.save(user);
+
+        try {
+            mailService.sendAccountDeleted(user.getEmail(), user.getFirstName() + " " + user.getLastName());
+        } catch (Exception ex) {
+            System.err.println("Send delete-account mail failed: " + ex.getMessage());
+        }
+    }
+
+    public UserProfileDTO changeEmail(String currentEmail, String newEmailRaw, String currentPassword) {
+        var newEmail = newEmailRaw.trim().toLowerCase();
+
+        // ✅ ตรวจว่าอีเมลใหม่ถูกใช้งานแล้วหรือยัง
+        if (repo.existsByEmail(newEmail)) {
+            throw new EmailAlreadyUsedException(); // ใช้ exception เดิมที่คุณมีอยู่
+        }
+
+        var user = repo.findByEmail(currentEmail.trim().toLowerCase())
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+        // ✅ เช็ครหัสผ่านก่อนเปลี่ยนอีเมล
+        if (!encoder.matches(currentPassword, user.getPasswordHash())) {
+            throw new IllegalArgumentException("Current password is incorrect");
+        }
+
+        var oldEmail = user.getEmail();
+        user.setEmail(newEmail);
+        repo.save(user);
+
+        try {
+            mailService.sendEmailChanged(oldEmail, newEmail, user.getFirstName() + " " + user.getLastName());
+        } catch (Exception ex) {
+            System.err.println("Send change-email mail failed: " + ex.getMessage());
+        }
+
+        return new UserProfileDTO(
+                user.getId(),
+                user.getFirstName(),
+                user.getLastName(),
+                user.getEmail(),
+                user.getPolicyConfirmed()
+        );
+    }
 }
