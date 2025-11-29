@@ -13,8 +13,17 @@ public class WebMvcConfig implements WebMvcConfigurer {
 
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
-        // เปิดให้เข้าถึงรูปได้ทาง URL เช่น /files/profile/xxx.png
+
+        // ==========================
+        // 1) เปิดให้โหลดรูปโปรไฟล์
+        // ==========================
         registry.addResourceHandler("/files/profile/**")
                 .addResourceLocations("file:" + profileDir + "/");
+
+        // ==========================
+        // 2) เปิดให้โหลดไฟล์ uploads (รูปบทละคร, pdf ฯลฯ)
+        // ==========================
+        registry.addResourceHandler("/uploads/**")
+                .addResourceLocations("file:uploads/");
     }
 }

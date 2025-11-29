@@ -9,6 +9,7 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
@@ -46,50 +47,59 @@ public class SecurityConfig {
             BCryptPasswordEncoder encoder) throws Exception {
 
         http
-            .csrf(csrf -> csrf.disable())
-            .cors(cors -> cors.configurationSource(request -> {
-                CorsConfiguration c = new CorsConfiguration();
-                c.setAllowedOriginPatterns(List.of("*"));
-                c.setAllowCredentials(true);
-                c.setAllowedMethods(List.of("GET","POST","PUT","DELETE","OPTIONS"));
-                c.setAllowedHeaders(List.of("*"));
-                c.setExposedHeaders(List.of("Authorization"));
-                c.setMaxAge(3600L);
-                return c;
-            }))
-            .sessionManagement(sm -> sm.sessionCreationPolicy(
-                org.springframework.security.config.http.SessionCreationPolicy.STATELESS))
-            .authorizeHttpRequests(auth -> auth
+                .csrf(csrf -> csrf.disable())
+                .cors(cors -> cors.configurationSource(request -> {
+            CorsConfiguration c = new CorsConfiguration();
+            c.setAllowedOriginPatterns(List.of("*"));
+            c.setAllowCredentials(true);
+            c.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+            c.setAllowedHeaders(List.of("*"));
+            c.setExposedHeaders(List.of("Authorization"));
+            c.setMaxAge(3600L);
+            return c;
+        }))
+                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authorizeHttpRequests(auth -> auth
                 .requestMatchers(
-                    "/api/auth/**",
-                    "/api/profiles/**",
-                    "/files/**",    
-                    "/swagger-ui.html", "/swagger-ui/**",
-                    "/v3/api-docs/**",
-                    "/error"
+                        "/api/auth/**",
+                        "/api/profiles/**",
+                        "/files/**",
+                        "/uploads/**", // ✅ เปิด static uploads ให้เรียกได้
+                        "/swagger-ui.html", "/swagger-ui/**",
+                        "/v3/api-docs/**",
+                        "/error"
+                ).permitAll()
+                .requestMatchers(
+                        org.springframework.http.HttpMethod.GET,
+                        "/api/public/scripts/**"
                 ).permitAll()
                 .requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**").permitAll()
                 .anyRequest().authenticated()
-            )
-            .httpBasic(httpBasic -> httpBasic.disable())
-            .formLogin(form -> form.disable())
-            .logout(l -> l.disable())
-            .exceptionHandling(ex -> ex.authenticationEntryPoint((req, res, e) -> {
-                res.setStatus(401);
-                res.setContentType("application/json;charset=UTF-8");
-                res.getWriter().write("{\"message\":\"Unauthorized\"}");
-            }))
-            // ✅ บอก Spring ให้ใช้ DaoAuthenticationProvider ที่เรากำหนด
-            .authenticationProvider(authProvider(uds, encoder))
-            // ✅ แทรก JWT filter ให้ตั้ง Authentication จาก Bearer token
-            .addFilterBefore(new JwtAuthFilter(jwt, uds),
-                org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class);
+                )
+                .httpBasic(httpBasic -> httpBasic.disable())
+                .formLogin(form -> form.disable())
+                .logout(l -> l.disable())
+                .exceptionHandling(ex -> ex.authenticationEntryPoint((req, res, e) -> {
+            res.setStatus(401);
+            res.setContentType("application/json;charset=UTF-8");
+            res.getWriter().write("{\"message\":\"Unauthorized\"}");
+        }))
+                // ✅ อนุญาตให้ iframe จาก origin เดียวกัน (สำหรับ PDF viewer)
+                .headers(headers -> headers.frameOptions(frame -> frame.disable()))
+                // ✅ ใช้ DaoAuthenticationProvider ที่กำหนดเอง
+                .authenticationProvider(authProvider(uds, encoder))
+                // ✅ JWT filter
+                .addFilterBefore(
+                        new JwtAuthFilter(jwt, uds),
+                        org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class
+                );
 
         return http.build();
     }
 
     @Bean
-    public DaoAuthenticationProvider authProvider(UserDetailsServiceImpl uds, BCryptPasswordEncoder encoder) {
+    public DaoAuthenticationProvider authProvider(UserDetailsServiceImpl uds,
+            BCryptPasswordEncoder encoder) {
         DaoAuthenticationProvider p = new DaoAuthenticationProvider();
         p.setUserDetailsService(uds);
         p.setPasswordEncoder(encoder);

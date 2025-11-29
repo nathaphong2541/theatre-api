@@ -177,6 +177,15 @@ public class Profile {
     @Column(name = "del_flag", nullable = false, length = 1)
     private DelFlag delFlag;
 
+    // ====== เพิ่มเองกันเหนียว (ไม่ต้องลบ @Getter ออก) ======
+    public String getFirstName() {
+        return firstName;
+    }
+
+    public String getLastName() {
+        return lastName;
+    }
+
     @PrePersist
     void prePersist() {
         var now = Instant.now();
