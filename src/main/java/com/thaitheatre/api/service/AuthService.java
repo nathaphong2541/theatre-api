@@ -2,11 +2,13 @@ package com.thaitheatre.api.service;
 
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import com.thaitheatre.api.common.DelFlag;
 import com.thaitheatre.api.common.EmailAlreadyUsedException;
+import com.thaitheatre.api.common.InvalidCredentialException;
 import com.thaitheatre.api.common.RecordStatus;
 import com.thaitheatre.api.model.dto.AuthResponse;
 import com.thaitheatre.api.model.dto.LoginRequest;
@@ -63,26 +65,32 @@ public class AuthService {
     }
 
     public AuthResponse login(LoginRequest rq) {
-        // 1) auth (จะโยน exception เองถ้ารหัสผ่านผิด)
-        var auth = new UsernamePasswordAuthenticationToken(
-                rq.email().trim().toLowerCase(), rq.password());
-        authManager.authenticate(auth);
-
-        // 2) ดึง user จาก DB เพื่อได้ id
         var email = rq.email().trim().toLowerCase();
+
+        try {
+            var auth = new UsernamePasswordAuthenticationToken(email, rq.password());
+            authManager.authenticate(auth);  // ถ้าผิด → AuthenticationException
+        } catch (AuthenticationException ex) {
+            throw new InvalidCredentialException("Invalid email or password");
+        }
+
         var user = repo.findByEmail(email)
-                .orElseThrow(() -> new IllegalArgumentException("Invalid email or password"));
+                .orElseThrow(() -> new InvalidCredentialException("Invalid email or password"));
 
-        // 3) ออก token โดยใช้ userId เป็น subject (สำคัญ!)
-        String token = jwt.generate(String.valueOf(user.getId())); // ✅ sub = userId
-
-        System.out.println("Generated JWT Token: " + token);
-
+        String token = jwt.generate(String.valueOf(user.getId()));
         long expSec = jwt.getExpMillis() / 1000;
-        return AuthResponse.bearer(token, expSec, new UserProfileDTO(
-                user.getId(), user.getFirstName(), user.getLastName(),
-                user.getEmail(), user.getPolicyConfirmed()
-        ));
+
+        return AuthResponse.bearer(
+                token,
+                expSec,
+                new UserProfileDTO(
+                        user.getId(),
+                        user.getFirstName(),
+                        user.getLastName(),
+                        user.getEmail(),
+                        user.getPolicyConfirmed()
+                )
+        );
     }
 
     public void deleteAccountByEmail(String email) {
