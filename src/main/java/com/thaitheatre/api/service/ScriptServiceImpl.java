@@ -133,8 +133,7 @@ public class ScriptServiceImpl implements ScriptService {
                     script,
                     pdfFile,
                     "อัปเดตเวอร์ชัน", // หรือส่งจาก request ก็ได้
-                    currentUserId
-            );
+                    currentUserId);
 
             script.setPdfPath(newVersion.getFilePath());
         }
@@ -320,10 +319,10 @@ public class ScriptServiceImpl implements ScriptService {
                 ? List.of()
                 : script.getImages().stream()
                         .map(img -> ScriptImageResponse.builder()
-                        .id(img.getId())
-                        .filePath(img.getFilePath())
-                        .sortOrder(img.getSortOrder())
-                        .build())
+                                .id(img.getId())
+                                .filePath(img.getFilePath())
+                                .sortOrder(img.getSortOrder())
+                                .build())
                         .toList();
 
         // 👇 ดึง Profile ผู้สร้างจาก Script (ถ้าคุณผูก relation ไว้แล้ว)
@@ -348,5 +347,20 @@ public class ScriptServiceImpl implements ScriptService {
                 .updatedAt(script.getUpdatedAt())
                 .updatedBy(script.getUpdatedBy())
                 .build();
+    }
+
+    @Override
+    public List<ScriptResponse> getMyScripts(Long userId) {
+        return scriptRepository.findAllByCreatedBy(userId)
+                .stream()
+                .map(this::mapToResponse)
+                .toList();
+    }
+
+    @Override
+    public ScriptResponse getMyScript(Long scriptId, Long userId) {
+        Script script = scriptRepository.findByIdAndCreatedBy(scriptId, userId)
+                .orElseThrow(() -> new RuntimeException("Script not found or you have no permission"));
+        return mapToResponse(script);
     }
 }

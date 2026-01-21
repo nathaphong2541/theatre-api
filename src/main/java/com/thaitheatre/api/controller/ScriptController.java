@@ -2,7 +2,6 @@ package com.thaitheatre.api.controller;
 
 import java.net.MalformedURLException;
 import java.nio.file.Path;
-import java.security.Principal;
 import java.util.Comparator;
 import java.util.List;
 
@@ -11,6 +10,8 @@ import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -43,28 +44,24 @@ public class ScriptController {
     private final ScriptPdfRepository scriptPdfRepository;
 
     // CREATE
-    @PostMapping(consumes = {"multipart/form-data"})
+    @PostMapping(consumes = { "multipart/form-data" })
     public ResponseEntity<ScriptResponse> createScript(
             @RequestPart("data") ScriptCreateRequest request,
             @RequestPart(value = "images", required = false) List<MultipartFile> images,
-            @RequestPart("pdf") MultipartFile pdfFile,
-            Principal principal
-    ) {
-        Long userId = getUserIdFromPrincipal(principal);
+            @RequestPart("pdf") MultipartFile pdfFile) {
+        Long userId = getCurrentUserId();
         ScriptResponse response = scriptService.createScript(request, images, pdfFile, userId);
         return ResponseEntity.ok(response);
     }
 
     // UPDATE
-    @PutMapping(value = "/{id}", consumes = {"multipart/form-data"})
+    @PutMapping(value = "/{id}", consumes = { "multipart/form-data" })
     public ResponseEntity<ScriptResponse> updateScript(
             @PathVariable Long id,
             @RequestPart("data") ScriptUpdateRequest request,
             @RequestPart(value = "images", required = false) List<MultipartFile> images,
-            @RequestPart(value = "pdf", required = false) MultipartFile pdfFile, // ✅ เพิ่ม
-            Principal principal
-    ) {
-        Long userId = getUserIdFromPrincipal(principal);
+            @RequestPart(value = "pdf", required = false) MultipartFile pdfFile) {
+        Long userId = getCurrentUserId();
         ScriptResponse response = scriptService.updateScript(id, request, images, pdfFile, userId);
         return ResponseEntity.ok(response);
     }
@@ -88,11 +85,20 @@ public class ScriptController {
         return ResponseEntity.noContent().build();
     }
 
-    // ───── helper สำหรับ demo ─────
-    private Long getUserIdFromPrincipal(Principal principal) {
-        // ตรงนี้คุณ map จาก principal -> userId ตามระบบจริงของคุณ
-        // เช่น cast เป็น CustomUserDetails แล้ว return getId()
-        return 1L; // ตอน dev mock ไว้ก่อนก็ได้
+    private Long getCurrentUserId() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) {
+            throw new RuntimeException("Unauthorized");
+        }
+
+        Object principal = auth.getPrincipal();
+
+        // ถ้าคุณทำ CustomUserDetails ให้มี getId()
+        if (principal instanceof com.thaitheatre.api.security.HasUserId p) {
+            return p.getId();
+        }
+
+        throw new RuntimeException("Cannot read userId from principal. Use CustomUserDetails.");
     }
 
     @GetMapping("/{id}/pdf")
@@ -140,6 +146,40 @@ public class ScriptController {
 
         String fileName = path.getFileName().toString();
 
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"")
+                .body(resource);
+    }
+
+    @GetMapping("/me")
+    public ResponseEntity<List<ScriptResponse>> getMyScripts() {
+        Long userId = getCurrentUserId(); // จาก JWT/Cookie
+        return ResponseEntity.ok(scriptService.getMyScripts(userId));
+    }
+
+    @GetMapping("/me/{id}")
+    public ResponseEntity<ScriptResponse> getMyScript(@PathVariable Long id) {
+        Long userId = getCurrentUserId();
+        return ResponseEntity.ok(scriptService.getMyScript(id, userId));
+    }
+
+    @GetMapping("/me/{id}/pdf")
+    public ResponseEntity<Resource> downloadMyLatestPdf(@PathVariable Long id) throws MalformedURLException {
+        Long userId = getCurrentUserId();
+        Script script = scriptRepository.findByIdAndCreatedBy(id, userId)
+                .orElseThrow(() -> new RuntimeException("Script not found or no permission"));
+
+        ScriptPdf latest = script.getPdfs().stream()
+                .max(Comparator.comparing(ScriptPdf::getVersionNo))
+                .orElseThrow(() -> new RuntimeException("PDF not found for this script"));
+
+        Path path = Path.of(latest.getFilePath());
+        Resource resource = new UrlResource(path.toUri());
+        if (!resource.exists())
+            throw new RuntimeException("PDF file not found on server");
+
+        String fileName = path.getFileName().toString();
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_PDF)
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"")

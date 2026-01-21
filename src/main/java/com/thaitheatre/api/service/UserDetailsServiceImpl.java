@@ -1,6 +1,8 @@
 package com.thaitheatre.api.service;
 
-import org.springframework.security.core.userdetails.User;
+import java.util.List;
+
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -8,6 +10,7 @@ import org.springframework.stereotype.Service;
 
 import com.thaitheatre.api.model.entity.UserAccount;
 import com.thaitheatre.api.repository.UserRepository;
+import com.thaitheatre.api.security.CustomUserDetails;
 
 @Service
 public class UserDetailsServiceImpl implements UserDetailsService {
@@ -20,32 +23,26 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 
     @Override
     public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
-        var u = repo.findByEmail(email)
+        UserAccount u = repo.findByEmail(email)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found"));
-        return User.withUsername(u.getEmail())
-                .password(u.getPasswordHash())
-                .roles("USER")
-                .build();
+        return toUserDetails(u);
     }
 
     public UserDetails loadUserById(Long id) throws UsernameNotFoundException {
-        var u = repo.findById(id)
+        UserAccount u = repo.findById(id)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found"));
-        return User.withUsername(u.getEmail())
-                .password(u.getPasswordHash())
-                .roles("USER")
-                .build();
+        return toUserDetails(u);
     }
 
     private UserDetails toUserDetails(UserAccount u) {
-        // 🟢 default role เป็น USER (หรือ ADMIN ตามที่ต้องการ)
-        String role = "USER";
+        // ✅ ตอนนี้คุณ fix role เป็น USER อยู่
+        // ถ้าในอนาคตมี role จริงใน DB ค่อย map เพิ่ม
+        var authorities = List.of(new SimpleGrantedAuthority("ROLE_USER"));
 
-        return User.builder()
-                .username(u.getEmail() != null ? u.getEmail() : String.valueOf(u.getId()))
-                .password(u.getPasswordHash())
-                .roles(role)
-                .disabled(false)
-                .build();
+        return new CustomUserDetails(
+                u.getId(), // ✅ สำคัญ: userId เก็บตรงนี้
+                u.getEmail() != null ? u.getEmail() : String.valueOf(u.getId()),
+                u.getPasswordHash(),
+                authorities);
     }
 }
