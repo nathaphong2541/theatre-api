@@ -3,7 +3,10 @@ package com.thaitheatre.api.service;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -35,15 +38,18 @@ public class ProfileService {
     private String publicBaseUrl;
 
     @Value("${app.files.profile-dir}")
-    private String profileDir; // ใช้ตอนลบไฟล์จริง
+    private String profileDir;
 
-    // ===== JSON only (ไม่ยุ่งกับรูป) =====
+    // ✅ ใช้ id เดียวพอ
+    private static final int OTHER_ID = 999;
+
+    // ===== JSON only =====
     @Transactional
     public ProfileResponse createOrUpdate(Long userId, ProfileRequest req) {
         return createOrUpdate(userId, req, null);
     }
 
-    // ===== JSON + รูป (multipart) =====
+    // ===== JSON + avatar (multipart) =====
     @Transactional
     public ProfileResponse createOrUpdate(Long userId, ProfileRequest req, MultipartFile avatar) {
         var profile = repo.findByUserId(userId).orElseGet(() -> {
@@ -59,11 +65,12 @@ public class ProfileService {
             p.setRaces(List.of());
             p.setAdditionals(List.of());
             p.setCredits(List.of());
+            p.setPartnerDetailById(Map.of());
             return p;
         });
 
-        // map fields
         if (req != null) {
+            // base
             profile.setPrivateProfile(req.privateProfile());
             profile.setProfileIsCompany(req.profileIsCompany());
             profile.setFirstName(req.firstName());
@@ -75,12 +82,13 @@ public class ProfileService {
             profile.setPhone(req.phone());
             profile.setWebsite(req.website());
 
-            // 🔹 social (ใหม่)
+            // social
             profile.setLinkedin(req.linkedin());
             profile.setFacebook(req.facebook());
             profile.setInstagram(req.instagram());
             profile.setTwitter(req.twitter());
 
+            // flags + about
             profile.setMultiLang(req.multiLang());
             profile.setTravel(req.travel());
             profile.setTour(req.tour());
@@ -88,6 +96,8 @@ public class ProfileService {
             profile.setEducation(req.education());
             profile.setVideo1(req.video1());
             profile.setVideo2(req.video2());
+
+            // lists
             profile.setWorkLocations(nvl(req.workLocations()));
             profile.setUnions(nvl(req.unions()));
             profile.setExperience(nvl(req.experience()));
@@ -96,15 +106,28 @@ public class ProfileService {
             profile.setRaces(nvl(req.races()));
             profile.setAdditionals(nvl(req.additionals()));
             profile.setCredits(nvl(req.credits()));
+
+            // texts (trim)
+            profile.setGenderSelfDescribeText(trimToNull(req.genderSelfDescribeText()));
+            profile.setPartnerOtherText(trimToNull(req.partnerOtherText()));
+            profile.setExperienceOtherText(trimToNull(req.experienceOtherText()));
+            profile.setUnionOtherText(trimToNull(req.unionOtherText()));
+            profile.setUnionStudentAcademicText(trimToNull(req.unionStudentAcademicText()));
+
+            // map
+            profile.setPartnerDetailById(req.partnerDetailById() == null ? Map.of() : req.partnerDetailById());
+
+            // ✅ validate + cleanup
+            applyExtraTexts(profile, req);
         }
 
-        // ✅ จัดการไฟล์รูป (เฉพาะเมื่อมีไฟล์ส่งมา)
+        // avatar upload
         if (avatar != null && !avatar.isEmpty()) {
             try {
                 String newName = fileStorageService.saveProfileImage(avatar, profile.getAvatarFilename());
                 profile.setAvatarFilename(newName);
             } catch (IllegalArgumentException e) {
-                throw e; // นามสกุลไม่ถูกต้อง
+                throw e;
             } catch (Exception e) {
                 throw new RuntimeException("อัปโหลดรูปไม่สำเร็จ", e);
             }
@@ -112,7 +135,6 @@ public class ProfileService {
 
         var saved = repo.save(profile);
 
-        // อัปเดตชื่อจริง/นามสกุลใน users (เฉพาะกรณี req != null)
         if (req != null) {
             syncUserName(userId, req.firstName(), req.lastName());
         }
@@ -120,75 +142,14 @@ public class ProfileService {
         return toResponse(saved);
     }
 
-    // ===== เปลี่ยนรูปอย่างเดียว =====
-    @Transactional
-    public ProfileResponse updateAvatarOnly(Long userId, MultipartFile avatar) {
-        if (avatar == null || avatar.isEmpty()) {
-            throw new IllegalArgumentException("กรุณาเลือกไฟล์รูป");
-        }
-        var profile = repo.findByUserId(userId)
-                .orElseThrow(() -> new IllegalStateException("Profile not found for userId=" + userId));
-
-        try {
-            String newName = fileStorageService.saveProfileImage(avatar, profile.getAvatarFilename());
-            profile.setAvatarFilename(newName);
-        } catch (IllegalArgumentException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new RuntimeException("อัปโหลดรูปไม่สำเร็จ", e);
-        }
-
-        var saved = repo.save(profile);
-        return toResponse(saved);
-    }
-
-    // ===== ลบรูปโปรไฟล์ =====
-    @Transactional
-    public ProfileResponse deleteAvatar(Long userId) {
-        var profile = repo.findByUserId(userId)
-                .orElseThrow(() -> new IllegalStateException("Profile not found for userId=" + userId));
-
-        String old = profile.getAvatarFilename();
-        profile.setAvatarFilename(null);
-        var saved = repo.save(profile);
-
-        // ลบไฟล์บนดิสก์ (ไม่ทำให้ธุรกรรม DB ล้ม ถ้าลบไฟล์พลาด)
-        if (old != null && !old.isBlank()) {
-            try {
-                Path p = Paths.get(profileDir).resolve(old);
-                Files.deleteIfExists(p);
-            } catch (Exception ignored) {
-            }
-        }
-        return toResponse(saved);
-    }
-
-    @Transactional
-    public ProfileResponse getMy(Long userId) {
-        var p = repo.findByUserId(userId).orElseGet(() -> {
-            var np = new Profile();
-            np.setUserId(userId);
-            np.setRecordStatus(RecordStatus.A);
-            np.setDelFlag(DelFlag.N);
-            np.setWorkLocations(List.of());
-            np.setUnions(List.of());
-            np.setExperience(List.of());
-            np.setPartners(List.of());
-            np.setGenders(List.of());
-            np.setRaces(List.of());
-            np.setAdditionals(List.of());
-            np.setCredits(List.of());
-            return repo.save(np);
-        });
-        return toResponse(p);
-    }
-
     // -------------------- helpers --------------------
+
     private void syncUserName(Long userId, String firstName, String lastName) {
         var user = userRepo.findById(userId)
                 .orElseThrow(() -> new IllegalStateException("User not found for id=" + userId));
 
         boolean changed = false;
+
         if (firstName != null) {
             var fn = firstName.trim();
             if (!fn.isEmpty() && !fn.equals(user.getFirstName())) {
@@ -196,6 +157,7 @@ public class ProfileService {
                 changed = true;
             }
         }
+
         if (lastName != null) {
             var ln = lastName.trim();
             if (!ln.isEmpty() && !ln.equals(user.getLastName())) {
@@ -203,15 +165,111 @@ public class ProfileService {
                 changed = true;
             }
         }
-        if (changed) {
+
+        if (changed)
             userRepo.save(user);
-        }
     }
 
     private static <T> List<T> nvl(List<T> v) {
         return v == null ? List.of() : v;
     }
 
+    private static String trimToNull(String s) {
+        if (s == null)
+            return null;
+        var t = s.trim();
+        return t.isEmpty() ? null : t;
+    }
+
+    /**
+     * ✅ Validate เฉพาะ 999 (Other/self-describe)
+     * และเคลียร์ text ถ้าไม่ได้เลือก
+     */
+    private void applyExtraTexts(Profile profile, ProfileRequest req) {
+
+        // genders -> self describe
+        if (contains(profile.getGenders(), OTHER_ID)) {
+            if (profile.getGenderSelfDescribeText() == null) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "genderSelfDescribeText is required when genders contains " + OTHER_ID);
+            }
+        } else {
+            profile.setGenderSelfDescribeText(null);
+        }
+
+        // experience -> other
+        if (contains(profile.getExperience(), OTHER_ID)) {
+            if (profile.getExperienceOtherText() == null) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "experienceOtherText is required when experience contains " + OTHER_ID);
+            }
+        } else {
+            profile.setExperienceOtherText(null);
+        }
+
+        // unions -> other
+        if (contains(profile.getUnions(), OTHER_ID)) {
+            if (profile.getUnionOtherText() == null) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "unionOtherText is required when unions contains " + OTHER_ID);
+            }
+        } else {
+            profile.setUnionOtherText(null);
+        }
+
+        // unions student academic text
+        // ✅ ตอนนี้ "ไม่บังคับ" จนกว่าคุณจะมั่นใจ ID จริง
+        // ถ้าอยากบังคับภายหลัง ค่อยเพิ่ม contains(unions, UNION_STUDENT_ACADEMIC_ID)
+
+        // partners -> other
+        if (contains(profile.getPartners(), OTHER_ID)) {
+            if (profile.getPartnerOtherText() == null) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "partnerOtherText is required when partners contains " + OTHER_ID);
+            }
+        } else {
+            profile.setPartnerOtherText(null);
+        }
+
+        // races -> other (ใช้ OTHER_ID เหมือนกัน)
+        if (contains(profile.getRaces(), OTHER_ID)) {
+            String t = trimToNull(req.racialIdentityOtherText());
+            if (t == null) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "racialIdentityOtherText is required when races contains " + OTHER_ID);
+            }
+            profile.setRacialIdentityOtherText(t);
+        } else {
+            profile.setRacialIdentityOtherText(null);
+        }
+
+        // ✅ clean partnerDetailById: keep เฉพาะ partner ที่ถูกเลือก
+        Map<Integer, String> map = profile.getPartnerDetailById();
+        if (map == null)
+            map = Map.of();
+
+        var keep = new HashSet<>(nvl(profile.getPartners()));
+        var cleaned = new HashMap<Integer, String>();
+        for (var e : map.entrySet()) {
+            Integer k = e.getKey();
+            String v = trimToNull(e.getValue());
+            if (k != null && keep.contains(k) && v != null) {
+                cleaned.put(k, v);
+            }
+        }
+        profile.setPartnerDetailById(cleaned);
+    }
+
+    private static boolean contains(List<Integer> list, int id) {
+        return list != null && list.contains(id);
+    }
+
+    // -------------------- response --------------------
     public ProfileResponse toResponse(Profile p) {
         String avatarUrl = null;
         if (p.getAvatarFilename() != null && !p.getAvatarFilename().isBlank()) {
@@ -240,7 +298,6 @@ public class ProfileService {
                 p.getEmail(),
                 p.getPhone(),
                 p.getWebsite(),
-                // 🔹 social (ใหม่)
                 p.getLinkedin(),
                 p.getFacebook(),
                 p.getInstagram(),
@@ -252,12 +309,22 @@ public class ProfileService {
                 p.getEducation(),
                 p.getVideo1(),
                 p.getVideo2(),
+
+                // ✅ workLocations ต้องมีใน ProfileResponse ด้วยนะ
                 nvl(p.getWorkLocations()),
-                nvl(p.getUnions()),
-                nvl(p.getExperience()),
+
                 nvl(p.getPartners()),
+                p.getPartnerDetailById() == null ? Map.of() : p.getPartnerDetailById(),
+                p.getPartnerOtherText(),
+                nvl(p.getExperience()),
+                p.getExperienceOtherText(),
+                nvl(p.getUnions()),
+                p.getUnionOtherText(),
+                p.getUnionStudentAcademicText(),
                 nvl(p.getGenders()),
+                p.getGenderSelfDescribeText(),
                 nvl(p.getRaces()),
+                p.getRacialIdentityOtherText(),
                 nvl(p.getAdditionals()),
                 nvl(p.getCredits()),
                 p.getCreatedAt(),
@@ -271,6 +338,36 @@ public class ProfileService {
         return publicBaseUrl.endsWith("/")
                 ? publicBaseUrl + filename
                 : publicBaseUrl + "/" + filename;
+    }
+
+    // ---- the rest (resume/performance/avatar) ใช้ของเดิมได้ ----
+
+    @Transactional
+    public ProfileResponse getMy(Long userId) {
+        var p = repo.findByUserId(userId).orElseGet(() -> {
+            var np = new Profile();
+            np.setUserId(userId);
+            np.setRecordStatus(RecordStatus.A);
+            np.setDelFlag(DelFlag.N);
+            np.setWorkLocations(List.of());
+            np.setUnions(List.of());
+            np.setExperience(List.of());
+            np.setPartners(List.of());
+            np.setGenders(List.of());
+            np.setRaces(List.of());
+            np.setAdditionals(List.of());
+            np.setCredits(List.of());
+            np.setPartnerDetailById(Map.of());
+            return repo.save(np);
+        });
+        return toResponse(p);
+    }
+
+    @Transactional(readOnly = true)
+    public ProfileResponse getByUserIdPublic(Long userId) {
+        return repo.findByUserId(userId)
+                .map(this::toResponse)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Profile not found"));
     }
 
     @Transactional(readOnly = true)
@@ -391,6 +488,49 @@ public class ProfileService {
             }
         }
 
+        return toResponse(saved);
+    }
+
+    // ===== เปลี่ยนรูปอย่างเดียว =====
+    @Transactional
+    public ProfileResponse updateAvatarOnly(Long userId, MultipartFile avatar) {
+        if (avatar == null || avatar.isEmpty()) {
+            throw new IllegalArgumentException("กรุณาเลือกไฟล์รูป");
+        }
+        var profile = repo.findByUserId(userId)
+                .orElseThrow(() -> new IllegalStateException("Profile not found for userId=" + userId));
+
+        try {
+            String newName = fileStorageService.saveProfileImage(avatar, profile.getAvatarFilename());
+            profile.setAvatarFilename(newName);
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException("อัปโหลดรูปไม่สำเร็จ", e);
+        }
+
+        var saved = repo.save(profile);
+        return toResponse(saved);
+    }
+
+    // ===== ลบรูปโปรไฟล์ =====
+    @Transactional
+    public ProfileResponse deleteAvatar(Long userId) {
+        var profile = repo.findByUserId(userId)
+                .orElseThrow(() -> new IllegalStateException("Profile not found for userId=" + userId));
+
+        String old = profile.getAvatarFilename();
+        profile.setAvatarFilename(null);
+        var saved = repo.save(profile);
+
+        // ลบไฟล์บนดิสก์ (ไม่ทำให้ธุรกรรม DB ล้ม ถ้าลบไฟล์พลาด)
+        if (old != null && !old.isBlank()) {
+            try {
+                Path p = Paths.get(profileDir).resolve(old);
+                Files.deleteIfExists(p);
+            } catch (Exception ignored) {
+            }
+        }
         return toResponse(saved);
     }
 }

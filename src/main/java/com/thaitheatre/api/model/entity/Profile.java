@@ -3,6 +3,7 @@ package com.thaitheatre.api.model.entity;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import org.hibernate.annotations.ColumnDefault;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -131,12 +132,34 @@ public class Profile {
     private List<Integer> partners;
 
     @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "partner_detail_by_id", columnDefinition = "jsonb not null default '{}'::jsonb")
+    private Map<Integer, String> partnerDetailById;
+
+    @Column(name = "partner_other_text", length = 200)
+    private String partnerOtherText;
+
+    @Column(name = "experience_other_text", length = 200)
+    private String experienceOtherText;
+
+    @Column(name = "union_other_text", length = 200)
+    private String unionOtherText;
+
+    @Column(name = "union_student_academic_text", length = 200)
+    private String unionStudentAcademicText;
+
+    @Column(name = "gender_self_describe_text", length = 200)
+    private String genderSelfDescribeText;
+
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "genders", columnDefinition = "jsonb not null default '[]'::jsonb")
     private List<Integer> genders;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "races", columnDefinition = "jsonb not null default '[]'::jsonb")
     private List<Integer> races;
+
+    @Column(name = "racial_identity_other_text", length = 200)
+    private String racialIdentityOtherText;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "additionals", columnDefinition = "jsonb not null default '[]'::jsonb")
