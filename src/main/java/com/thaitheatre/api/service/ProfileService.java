@@ -81,7 +81,7 @@ public class ProfileService {
             profile.setEmail(req.email());
             profile.setPhone(req.phone());
             profile.setWebsite(req.website());
-
+            profile.setAdditionalLanguages(cleanLanguages(req.additionalLanguages()));
             // social
             profile.setLinkedin(req.linkedin());
             profile.setFacebook(req.facebook());
@@ -108,6 +108,7 @@ public class ProfileService {
             profile.setCredits(nvl(req.credits()));
 
             // texts (trim)
+            profile.setWorklocaltionsOtherText(trimToNull(req.workLocationsOtherText()));
             profile.setGenderSelfDescribeText(trimToNull(req.genderSelfDescribeText()));
             profile.setPartnerOtherText(trimToNull(req.partnerOtherText()));
             profile.setExperienceOtherText(trimToNull(req.experienceOtherText()));
@@ -185,7 +186,22 @@ public class ProfileService {
      * ✅ Validate เฉพาะ 999 (Other/self-describe)
      * และเคลียร์ text ถ้าไม่ได้เลือก
      */
+    /**
+     * ✅ Validate เฉพาะ 999 (Other/self-describe)
+     * และเคลียร์ text ถ้าไม่ได้เลือก
+     */
     private void applyExtraTexts(Profile profile, ProfileRequest req) {
+
+        // workLocations -> other text
+        if (contains(profile.getWorkLocations(), OTHER_ID)) {
+            if (profile.getWorklocaltionsOtherText() == null) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "workLocationsOtherText is required when workLocations contains " + OTHER_ID);
+            }
+        } else {
+            profile.setWorklocaltionsOtherText(null);
+        }
 
         // genders -> self describe
         if (contains(profile.getGenders(), OTHER_ID)) {
@@ -220,10 +236,6 @@ public class ProfileService {
             profile.setUnionOtherText(null);
         }
 
-        // unions student academic text
-        // ✅ ตอนนี้ "ไม่บังคับ" จนกว่าคุณจะมั่นใจ ID จริง
-        // ถ้าอยากบังคับภายหลัง ค่อยเพิ่ม contains(unions, UNION_STUDENT_ACADEMIC_ID)
-
         // partners -> other
         if (contains(profile.getPartners(), OTHER_ID)) {
             if (profile.getPartnerOtherText() == null) {
@@ -235,7 +247,7 @@ public class ProfileService {
             profile.setPartnerOtherText(null);
         }
 
-        // races -> other (ใช้ OTHER_ID เหมือนกัน)
+        // races -> other
         if (contains(profile.getRaces(), OTHER_ID)) {
             String t = trimToNull(req.racialIdentityOtherText());
             if (t == null) {
@@ -248,6 +260,18 @@ public class ProfileService {
             profile.setRacialIdentityOtherText(null);
         }
 
+        // ✅ multiLang -> additionalLanguages
+        if (profile.isMultiLang()) {
+            var langs = cleanLanguages(req.additionalLanguages());
+            profile.setAdditionalLanguages(langs);
+            // ถ้าต้องการบังคับว่าต้องมีอย่างน้อย 1 ภาษาเมื่อ multiLang=true:
+            // if (langs.isEmpty()) throw new
+            // ResponseStatusException(HttpStatus.BAD_REQUEST,
+            // "additionalLanguages is required when multiLang is true");
+        } else {
+            profile.setAdditionalLanguages(List.of());
+        }
+
         // ✅ clean partnerDetailById: keep เฉพาะ partner ที่ถูกเลือก
         Map<Integer, String> map = profile.getPartnerDetailById();
         if (map == null)
@@ -255,6 +279,7 @@ public class ProfileService {
 
         var keep = new HashSet<>(nvl(profile.getPartners()));
         var cleaned = new HashMap<Integer, String>();
+
         for (var e : map.entrySet()) {
             Integer k = e.getKey();
             String v = trimToNull(e.getValue());
@@ -303,6 +328,7 @@ public class ProfileService {
                 p.getInstagram(),
                 p.getTwitter(),
                 p.isMultiLang(),
+                nvlStr(p.getAdditionalLanguages()),
                 p.getTravel(),
                 p.getTour(),
                 p.getAbout(),
@@ -312,7 +338,7 @@ public class ProfileService {
 
                 // ✅ workLocations ต้องมีใน ProfileResponse ด้วยนะ
                 nvl(p.getWorkLocations()),
-
+                p.getWorklocaltionsOtherText(),
                 nvl(p.getPartners()),
                 p.getPartnerDetailById() == null ? Map.of() : p.getPartnerDetailById(),
                 p.getPartnerOtherText(),
@@ -332,6 +358,10 @@ public class ProfileService {
                 avatarUrl,
                 resumeUrl,
                 performanceUrls);
+    }
+
+    private static List<String> nvlStr(List<String> v) {
+        return v == null ? List.of() : v;
     }
 
     private String buildUrl(String filename) {
@@ -358,16 +388,10 @@ public class ProfileService {
             np.setAdditionals(List.of());
             np.setCredits(List.of());
             np.setPartnerDetailById(Map.of());
+            np.setAdditionalLanguages(List.of());
             return repo.save(np);
         });
         return toResponse(p);
-    }
-
-    @Transactional(readOnly = true)
-    public ProfileResponse getByUserIdPublic(Long userId) {
-        return repo.findByUserId(userId)
-                .map(this::toResponse)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Profile not found"));
     }
 
     @Transactional(readOnly = true)
@@ -533,4 +557,28 @@ public class ProfileService {
         }
         return toResponse(saved);
     }
+
+    private static List<String> cleanLanguages(List<String> langs) {
+        if (langs == null)
+            return List.of();
+
+        // trim + ตัดว่าง + unique (รักษาลำดับ)
+        var seen = new HashSet<String>();
+        var out = new java.util.ArrayList<String>();
+
+        for (String s : langs) {
+            if (s == null)
+                continue;
+            var t = s.trim();
+            if (t.isEmpty())
+                continue;
+            if (t.length() > 50)
+                t = t.substring(0, 50); // กันยาวเกิน (หรือโยน 400 ก็ได้)
+            var key = t.toLowerCase();
+            if (seen.add(key))
+                out.add(t);
+        }
+        return out;
+    }
+
 }

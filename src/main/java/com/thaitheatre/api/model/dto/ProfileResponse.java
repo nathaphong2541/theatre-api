@@ -22,6 +22,7 @@ public record ProfileResponse(
         String instagram,
         String twitter,
         boolean multiLang,
+        List<String> additionalLanguages,
         Boolean travel,
         Boolean tour,
         String about,
@@ -29,8 +30,8 @@ public record ProfileResponse(
         String video1,
         String video2,
 
-        // ✅ เพิ่มกลับมา
         List<Integer> workLocations,
+        String workLocationsOtherText,
 
         List<Integer> partners,
         Map<Integer, String> partnerDetailById,

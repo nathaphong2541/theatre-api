@@ -93,6 +93,10 @@ public class Profile {
     @ColumnDefault("false")
     private boolean multiLang;
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "additional_languages", columnDefinition = "jsonb not null default '[]'::jsonb")
+    private List<String> additionalLanguages;
+
     // ใช้ Boolean wrapper ให้ null ได้ตามฟอร์ม
     @Column
     private Boolean travel;
@@ -134,6 +138,9 @@ public class Profile {
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "partner_detail_by_id", columnDefinition = "jsonb not null default '{}'::jsonb")
     private Map<Integer, String> partnerDetailById;
+
+    @Column(name = "work_locations_other_text", length = 200)
+    private String worklocaltionsOtherText;
 
     @Column(name = "partner_other_text", length = 200)
     private String partnerOtherText;
@@ -237,6 +244,9 @@ public class Profile {
         if (additionals == null) {
             additionals = List.of();
         }
+
+        if (additionalLanguages == null)
+            additionalLanguages = List.of();
     }
 
     @PreUpdate
