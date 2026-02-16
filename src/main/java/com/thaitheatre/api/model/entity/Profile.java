@@ -71,9 +71,12 @@ public class Profile {
     @Column(length = 50)
     private String pronouns;
 
-    // -------- Profession
-    @Column(length = 50)
-    private String title;
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "title", columnDefinition = "jsonb not null default '[]'::jsonb")
+    private List<Integer> title;
+
+    @Column(name = "title_other_text", length = 200)
+    private String titleOtherText;
 
     @Column(length = 50)
     private String location;
@@ -245,8 +248,9 @@ public class Profile {
             additionals = List.of();
         }
 
-        if (additionalLanguages == null)
+        if (additionalLanguages == null) {
             additionalLanguages = List.of();
+        }
     }
 
     @PreUpdate

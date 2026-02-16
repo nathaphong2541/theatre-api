@@ -76,7 +76,7 @@ public class ProfileService {
             profile.setFirstName(req.firstName());
             profile.setLastName(req.lastName());
             profile.setPronouns(req.pronouns());
-            profile.setTitle(req.title());
+            profile.setTitle(nvl(req.title()));
             profile.setLocation(req.location());
             profile.setEmail(req.email());
             profile.setPhone(req.phone());
@@ -108,6 +108,7 @@ public class ProfileService {
             profile.setCredits(nvl(req.credits()));
 
             // texts (trim)
+            profile.setTitleOtherText(trimToNull(req.titleOtherText()));
             profile.setWorklocaltionsOtherText(trimToNull(req.workLocationsOtherText()));
             profile.setGenderSelfDescribeText(trimToNull(req.genderSelfDescribeText()));
             profile.setPartnerOtherText(trimToNull(req.partnerOtherText()));
@@ -144,7 +145,6 @@ public class ProfileService {
     }
 
     // -------------------- helpers --------------------
-
     private void syncUserName(Long userId, String firstName, String lastName) {
         var user = userRepo.findById(userId)
                 .orElseThrow(() -> new IllegalStateException("User not found for id=" + userId));
@@ -167,8 +167,9 @@ public class ProfileService {
             }
         }
 
-        if (changed)
+        if (changed) {
             userRepo.save(user);
+        }
     }
 
     private static <T> List<T> nvl(List<T> v) {
@@ -176,19 +177,18 @@ public class ProfileService {
     }
 
     private static String trimToNull(String s) {
-        if (s == null)
+        if (s == null) {
             return null;
+        }
         var t = s.trim();
         return t.isEmpty() ? null : t;
     }
 
     /**
-     * ✅ Validate เฉพาะ 999 (Other/self-describe)
-     * และเคลียร์ text ถ้าไม่ได้เลือก
+     * ✅ Validate เฉพาะ 999 (Other/self-describe) และเคลียร์ text ถ้าไม่ได้เลือก
      */
     /**
-     * ✅ Validate เฉพาะ 999 (Other/self-describe)
-     * และเคลียร์ text ถ้าไม่ได้เลือก
+     * ✅ Validate เฉพาะ 999 (Other/self-describe) และเคลียร์ text ถ้าไม่ได้เลือก
      */
     private void applyExtraTexts(Profile profile, ProfileRequest req) {
 
@@ -198,6 +198,16 @@ public class ProfileService {
                 throw new ResponseStatusException(
                         HttpStatus.BAD_REQUEST,
                         "workLocationsOtherText is required when workLocations contains " + OTHER_ID);
+            }
+        } else {
+            profile.setWorklocaltionsOtherText(null);
+        }
+
+        if (contains(profile.getTitle(), OTHER_ID)) {
+            if (profile.getTitleOtherText() == null) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "titleOtherText is required when title contains " + OTHER_ID);
             }
         } else {
             profile.setWorklocaltionsOtherText(null);
@@ -274,8 +284,9 @@ public class ProfileService {
 
         // ✅ clean partnerDetailById: keep เฉพาะ partner ที่ถูกเลือก
         Map<Integer, String> map = profile.getPartnerDetailById();
-        if (map == null)
+        if (map == null) {
             map = Map.of();
+        }
 
         var keep = new HashSet<>(nvl(profile.getPartners()));
         var cleaned = new HashMap<Integer, String>();
@@ -318,7 +329,8 @@ public class ProfileService {
                 p.getFirstName(),
                 p.getLastName(),
                 p.getPronouns(),
-                p.getTitle(),
+                nvl(p.getTitle()),
+                p.getTitleOtherText(),
                 p.getLocation(),
                 p.getEmail(),
                 p.getPhone(),
@@ -335,7 +347,6 @@ public class ProfileService {
                 p.getEducation(),
                 p.getVideo1(),
                 p.getVideo2(),
-
                 // ✅ workLocations ต้องมีใน ProfileResponse ด้วยนะ
                 nvl(p.getWorkLocations()),
                 p.getWorklocaltionsOtherText(),
@@ -371,7 +382,6 @@ public class ProfileService {
     }
 
     // ---- the rest (resume/performance/avatar) ใช้ของเดิมได้ ----
-
     @Transactional
     public ProfileResponse getMy(Long userId) {
         var p = repo.findByUserId(userId).orElseGet(() -> {
@@ -464,8 +474,9 @@ public class ProfileService {
 
         for (int i = 0; i < files.length; i++) {
             MultipartFile f = files[i];
-            if (f == null || f.isEmpty())
+            if (f == null || f.isEmpty()) {
                 continue;
+            }
 
             try {
                 String filename = fileStorageService.savePerformanceImage(f);
@@ -559,24 +570,30 @@ public class ProfileService {
     }
 
     private static List<String> cleanLanguages(List<String> langs) {
-        if (langs == null)
+        if (langs == null) {
             return List.of();
+        }
 
         // trim + ตัดว่าง + unique (รักษาลำดับ)
         var seen = new HashSet<String>();
         var out = new java.util.ArrayList<String>();
 
         for (String s : langs) {
-            if (s == null)
+            if (s == null) {
                 continue;
+            }
             var t = s.trim();
-            if (t.isEmpty())
+            if (t.isEmpty()) {
                 continue;
-            if (t.length() > 50)
+            }
+            if (t.length() > 50) {
                 t = t.substring(0, 50); // กันยาวเกิน (หรือโยน 400 ก็ได้)
+
+            }
             var key = t.toLowerCase();
-            if (seen.add(key))
+            if (seen.add(key)) {
                 out.add(t);
+            }
         }
         return out;
     }

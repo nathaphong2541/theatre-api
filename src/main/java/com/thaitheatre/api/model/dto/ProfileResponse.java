@@ -12,7 +12,8 @@ public record ProfileResponse(
         String firstName,
         String lastName,
         String pronouns,
-        String title,
+        List<Integer> title,
+        String titleOtherText,
         String location,
         String email,
         String phone,
@@ -29,27 +30,20 @@ public record ProfileResponse(
         String education,
         String video1,
         String video2,
-
         List<Integer> workLocations,
         String workLocationsOtherText,
-
         List<Integer> partners,
         Map<Integer, String> partnerDetailById,
         String partnerOtherText,
-
         List<Integer> experience,
         String experienceOtherText,
-
         List<Integer> unions,
         String unionOtherText,
         String unionStudentAcademicText,
-
         List<Integer> genders,
         String genderSelfDescribeText,
-
         List<Integer> races,
         String racialIdentityOtherText,
-
         List<Integer> additionals,
         List<ProfileCredit> credits,
         Instant createdAt,
@@ -57,4 +51,5 @@ public record ProfileResponse(
         String avatarUrl,
         String resumeUrl,
         List<String> performanceUrls) {
+
 }
