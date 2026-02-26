@@ -21,6 +21,7 @@ import org.springframework.web.server.ResponseStatusException;
 import com.thaitheatre.api.model.dto.ProfileRequest;
 import com.thaitheatre.api.model.dto.ProfileResponse;
 import com.thaitheatre.api.repository.UserRepository;
+import com.thaitheatre.api.security.CustomUserDetails;
 import com.thaitheatre.api.service.ProfileService;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -92,6 +93,14 @@ public class ProfileController {
     public ProfileResponse getMyProfile(@AuthenticationPrincipal User principal) {
         Long userId = resolveUserId(principal);
         return profileService.getMy(userId);
+    }
+
+    @DeleteMapping("/me/performance/{performanceId}")
+    public ProfileResponse deleteMyPerformance(
+            @AuthenticationPrincipal CustomUserDetails user,
+            @PathVariable Long performanceId
+    ) {
+        return profileService.deletePerformance(user.getId(), performanceId);
     }
 
     // -------------------- helpers --------------------

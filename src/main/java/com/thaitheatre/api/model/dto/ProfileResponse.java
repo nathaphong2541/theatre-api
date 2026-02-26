@@ -50,6 +50,8 @@ public record ProfileResponse(
         Instant updatedAt,
         String avatarUrl,
         String resumeUrl,
-        List<String> performanceUrls) {
+        List<String> performanceUrls,
+        List<ProfilePerformanceItem> performanceItems
+        ) {
 
 }

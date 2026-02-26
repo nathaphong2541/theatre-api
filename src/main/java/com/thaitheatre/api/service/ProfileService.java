@@ -3,6 +3,7 @@ package com.thaitheatre.api.service;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -17,6 +18,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.thaitheatre.api.common.DelFlag;
 import com.thaitheatre.api.common.RecordStatus;
+import com.thaitheatre.api.model.dto.ProfileCredit;
+import com.thaitheatre.api.model.dto.ProfilePerformanceItem;
 import com.thaitheatre.api.model.dto.ProfileRequest;
 import com.thaitheatre.api.model.dto.ProfileResponse;
 import com.thaitheatre.api.model.entity.Profile;
@@ -105,7 +108,7 @@ public class ProfileService {
             profile.setGenders(nvl(req.genders()));
             profile.setRaces(nvl(req.races()));
             profile.setAdditionals(nvl(req.additionals()));
-            profile.setCredits(nvl(req.credits()));
+            profile.setCredits(validateAndCleanCredits(req.credits()));
 
             // texts (trim)
             profile.setTitleOtherText(trimToNull(req.titleOtherText()));
@@ -200,7 +203,7 @@ public class ProfileService {
                         "workLocationsOtherText is required when workLocations contains " + OTHER_ID);
             }
         } else {
-            profile.setWorklocaltionsOtherText(null);
+            profile.setWorklocaltionsOtherText(null); // ✅ ถูกต้อง
         }
 
         if (contains(profile.getTitle(), OTHER_ID)) {
@@ -210,7 +213,7 @@ public class ProfileService {
                         "titleOtherText is required when title contains " + OTHER_ID);
             }
         } else {
-            profile.setWorklocaltionsOtherText(null);
+            profile.setTitleOtherText(null); // ✅ ถูกต้อง
         }
 
         // genders -> self describe
@@ -299,6 +302,70 @@ public class ProfileService {
             }
         }
         profile.setPartnerDetailById(cleaned);
+
+    }
+
+    private List<ProfileCredit> validateAndCleanCredits(List<ProfileCredit> credits) {
+
+        if (credits == null) {
+            return List.of();
+        }
+
+        var result = new java.util.ArrayList<ProfileCredit>();
+
+        for (int i = 0; i < credits.size(); i++) {
+
+            var c = credits.get(i);
+
+            var deptIds = nvl(c.deptIds());
+            var posIds = nvl(c.posIds());
+
+            String deptText = trimToNull(c.deptText());
+            String posText = trimToNull(c.posText());
+
+            // ---- deptIds 999 ----
+            if (deptIds.contains(OTHER_ID)) {
+                if (deptText == null) {
+                    throw new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST,
+                            "credits[" + i + "].deptText is required when deptIds contains " + OTHER_ID
+                    );
+                }
+            } else {
+                deptText = null;
+            }
+
+            // ---- posIds 999 ----
+            if (posIds.contains(OTHER_ID)) {
+                if (posText == null) {
+                    throw new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST,
+                            "credits[" + i + "].posText is required when posIds contains " + OTHER_ID
+                    );
+                }
+            } else {
+                posText = null;
+            }
+
+            result.add(new ProfileCredit(
+                    c.company(),
+                    c.title(),
+                    c.startYear(),
+                    c.endYear(),
+                    c.current(),
+                    c.venue(),
+                    c.jobLocation(),
+                    c.internship(),
+                    c.fellowship(),
+                    deptIds,
+                    deptText,
+                    posIds,
+                    posText,
+                    nvl(c.skillIds())
+            ));
+        }
+
+        return result;
     }
 
     private static boolean contains(List<Integer> list, int id) {
@@ -317,8 +384,21 @@ public class ProfileService {
             resumeUrl = buildUrl("resume/" + p.getResumeFilename());
         }
 
-        List<String> performanceUrls = p.getPerformances().stream()
+        // ✅ sort ให้แน่นอนตาม sortOrder (ถ้ามี)
+        var perfs = p.getPerformances().stream()
+                .sorted(Comparator.comparing(ProfilePerformance::getSortOrder, Comparator.nullsLast(Integer::compareTo)))
+                .toList();
+
+        List<String> performanceUrls = perfs.stream()
                 .map(perf -> buildUrl("performance/" + perf.getFilename()))
+                .toList();
+
+        List<ProfilePerformanceItem> performanceItems = perfs.stream()
+                .map(perf -> new ProfilePerformanceItem(
+                perf.getId(),
+                buildUrl("performance/" + perf.getFilename()),
+                perf.getSortOrder()
+        ))
                 .toList();
 
         return new ProfileResponse(
@@ -347,7 +427,6 @@ public class ProfileService {
                 p.getEducation(),
                 p.getVideo1(),
                 p.getVideo2(),
-                // ✅ workLocations ต้องมีใน ProfileResponse ด้วยนะ
                 nvl(p.getWorkLocations()),
                 p.getWorklocaltionsOtherText(),
                 nvl(p.getPartners()),
@@ -368,7 +447,9 @@ public class ProfileService {
                 p.getUpdatedAt(),
                 avatarUrl,
                 resumeUrl,
-                performanceUrls);
+                performanceUrls,
+                performanceItems
+        );
     }
 
     private static List<String> nvlStr(List<String> v) {
@@ -503,14 +584,20 @@ public class ProfileService {
 
         var it = profile.getPerformances().iterator();
         String filenameToDelete = null;
+        boolean found = false;
 
         while (it.hasNext()) {
             var perf = it.next();
             if (perf.getId().equals(performanceId)) {
                 filenameToDelete = perf.getFilename();
-                it.remove(); // orphanRemoval = true ทำให้ลบ row ใน DB
+                it.remove(); // orphanRemoval = true
+                found = true;
                 break;
             }
+        }
+
+        if (!found) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Performance not found: " + performanceId);
         }
 
         var saved = repo.save(profile);
@@ -522,6 +609,12 @@ public class ProfileService {
             } catch (Exception ignored) {
             }
         }
+
+        // ✅ (optional) re-order sortOrder ให้ต่อเนื่องหลังลบ
+        for (int i = 0; i < saved.getPerformances().size(); i++) {
+            saved.getPerformances().get(i).setSortOrder(i);
+        }
+        saved = repo.save(saved);
 
         return toResponse(saved);
     }

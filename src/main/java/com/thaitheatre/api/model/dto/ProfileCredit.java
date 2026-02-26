@@ -13,6 +13,10 @@ public record ProfileCredit(
         Boolean internship,
         Boolean fellowship,
         List<Integer> deptIds,
+        String deptText, // ✅ เพิ่ม
         List<Integer> posIds,
-        List<Integer> skillIds) {
+        String posText, // ✅ เพิ่ม
+        List<Integer> skillIds
+        ) {
+
 }
