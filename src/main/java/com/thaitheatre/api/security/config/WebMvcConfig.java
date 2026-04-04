@@ -11,19 +11,26 @@ public class WebMvcConfig implements WebMvcConfigurer {
     @Value("${app.files.profile-dir}")
     private String profileDir;
 
+    @Value("${upload.script.dir}")
+    private String scriptDir;
+
+    @Value("${upload.script.pdf.dir}")
+    private String scriptPdfDir;
+
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
 
-        // ==========================
-        // 1) เปิดให้โหลดรูปโปรไฟล์
-        // ==========================
+        // profile
         registry.addResourceHandler("/files/profile/**")
                 .addResourceLocations("file:" + profileDir + "/");
 
-        // ==========================
-        // 2) เปิดให้โหลดไฟล์ uploads (รูปบทละคร, pdf ฯลฯ)
-        // ==========================
-        registry.addResourceHandler("/uploads/**")
-                .addResourceLocations("file:uploads/");
+        // images (scripts)
+        registry.addResourceHandler("/files/scripts/**")
+                .addResourceLocations("file:" + scriptDir + "/");
+
+        // pdf
+        registry.addResourceHandler("/files/scripts/pdf/**")
+                .addResourceLocations("file:" + scriptPdfDir + "/");
+      
     }
 }

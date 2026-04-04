@@ -32,12 +32,18 @@ public class ScriptServiceImpl implements ScriptService {
     private final ScriptRepository scriptRepository;
     private final ScriptImageRepository scriptImageRepository;
 
-    @Value("${upload.script.dir:uploads/scripts}")
+    @Value("${upload.script.dir}")
     private String uploadDir;
 
     // ✅ โฟลเดอร์เก็บ pdf แยกออกมา
-    @Value("${upload.script.pdf.dir:uploads/scripts/pdf}")
+    @Value("${upload.script.pdf.dir}")
     private String uploadPdfDir;
+
+    @Value("${app.files.script-url}")
+    private String scriptUrl;
+
+    @Value("${app.files.script-pdf-url}")
+    private String scriptPdfUrl;
 
     @Override
     public ScriptResponse createScript(ScriptCreateRequest request,
@@ -255,6 +261,7 @@ public class ScriptServiceImpl implements ScriptService {
 
         try {
             Path uploadPath = Path.of(uploadDir);
+            System.out.println("uploadDir = " + uploadDir);
             if (!Files.exists(uploadPath)) {
                 Files.createDirectories(uploadPath);
             }
@@ -320,7 +327,7 @@ public class ScriptServiceImpl implements ScriptService {
                 : script.getImages().stream()
                         .map(img -> ScriptImageResponse.builder()
                                 .id(img.getId())
-                                .filePath(img.getFilePath())
+                                .filePath(toScriptUrl(img.getFilePath()))
                                 .sortOrder(img.getSortOrder())
                                 .build())
                         .toList();
@@ -340,7 +347,7 @@ public class ScriptServiceImpl implements ScriptService {
                 .description(script.getDescription())
                 .tags(script.getTags())
                 .images(imageResponses)
-                .pdfPath(script.getPdfPath())
+                .pdfPath(toScriptPdfUrl(script.getPdfPath()))
                 .createdAt(script.getCreatedAt())
                 .createdBy(script.getCreatedBy())
                 .createdByName(createdByName) // 👈 อันนี้ไว้โชว์ชื่อบน frontend
@@ -362,5 +369,21 @@ public class ScriptServiceImpl implements ScriptService {
         Script script = scriptRepository.findByIdAndCreatedBy(scriptId, userId)
                 .orElseThrow(() -> new RuntimeException("Script not found or you have no permission"));
         return mapToResponse(script);
+    }
+
+    private String toScriptUrl(String fullPath) {
+        if (fullPath == null)
+            return null;
+
+        String fileName = Path.of(fullPath).getFileName().toString();
+        return scriptUrl + fileName;
+    }
+
+    private String toScriptPdfUrl(String fullPath) {
+        if (fullPath == null)
+            return null;
+
+        String fileName = Path.of(fullPath).getFileName().toString();
+        return scriptPdfUrl + "/" + fileName;
     }
 }
