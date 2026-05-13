@@ -4,6 +4,7 @@ import java.time.Instant;
 
 import com.thaitheatre.api.common.DelFlag;
 import com.thaitheatre.api.common.RecordStatus;
+import com.thaitheatre.api.model.enums.UserRole;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -37,13 +38,18 @@ public class UserAccount {
     private String lastName;
 
     @Column(nullable = false, unique = true, length = 150)
-    private String email;          // ใช้เป็น username
+    private String email; // ใช้เป็น username
 
     @Column(nullable = false, length = 255)
-    private String passwordHash;   // BCrypt hash
+    private String passwordHash; // BCrypt hash
 
     @Column(nullable = false)
     private Boolean policyConfirmed = false;
+
+    // --- Role ---
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private UserRole role = UserRole.USER;
 
     // --- Status flags ---
     @Enumerated(EnumType.STRING)

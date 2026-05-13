@@ -15,6 +15,7 @@ import com.thaitheatre.api.model.dto.LoginRequest;
 import com.thaitheatre.api.model.dto.RegisterRequest;
 import com.thaitheatre.api.model.dto.UserProfileDTO;
 import com.thaitheatre.api.model.entity.UserAccount;
+import com.thaitheatre.api.model.enums.UserRole;
 import com.thaitheatre.api.repository.UserRepository;
 import com.thaitheatre.api.security.JwtUtil;
 
@@ -43,6 +44,7 @@ public class AuthService {
         UserAccount u = new UserAccount();
         u.setFirstName(rq.firstName().trim());
         u.setLastName(rq.lastName().trim());
+        u.setRole(UserRole.USER);
         u.setEmail(rq.email().trim().toLowerCase());
         u.setPasswordHash(encoder.encode(rq.password()));
         u.setPolicyConfirmed(rq.policyConfirm());
@@ -60,8 +62,7 @@ public class AuthService {
         }
 
         return new UserProfileDTO(
-                u.getId(), u.getFirstName(), u.getLastName(), u.getEmail(), u.getPolicyConfirmed()
-        );
+                u.getId(), u.getFirstName(), u.getLastName(), u.getEmail(), u.getPolicyConfirmed());
     }
 
     public AuthResponse login(LoginRequest rq) {
@@ -69,7 +70,7 @@ public class AuthService {
 
         try {
             var auth = new UsernamePasswordAuthenticationToken(email, rq.password());
-            authManager.authenticate(auth);  // ถ้าผิด → AuthenticationException
+            authManager.authenticate(auth); // ถ้าผิด → AuthenticationException
         } catch (AuthenticationException ex) {
             throw new InvalidCredentialException("Invalid email or password");
         }
@@ -88,9 +89,7 @@ public class AuthService {
                         user.getFirstName(),
                         user.getLastName(),
                         user.getEmail(),
-                        user.getPolicyConfirmed()
-                )
-        );
+                        user.getPolicyConfirmed()));
     }
 
     public void deleteAccountByEmail(String email) {
@@ -141,7 +140,6 @@ public class AuthService {
                 user.getFirstName(),
                 user.getLastName(),
                 user.getEmail(),
-                user.getPolicyConfirmed()
-        );
+                user.getPolicyConfirmed());
     }
 }

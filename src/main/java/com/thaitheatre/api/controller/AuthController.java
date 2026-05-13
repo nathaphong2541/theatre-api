@@ -44,7 +44,7 @@ public class AuthController {
     @Value("${app.frontend.base-url:http://localhost:4200}")
     private String frontendBase;
 
-    @Value("${app.cookie.secure:false}")       // prod → true
+    @Value("${app.cookie.secure:false}") // prod → true
     private boolean cookieSecure;
 
     @Value("${app.cookie.max-age-seconds:7200}") // default 2 ชั่วโมง
@@ -87,8 +87,7 @@ public class AuthController {
         // ส่งข้อมูล user/ข้อความกลับไปก็พอ
         return ResponseEntity.ok(Map.of(
                 "user", authRes.user(),
-                "message", "Login successful"
-        ));
+                "message", "Login successful"));
     }
 
     @GetMapping("/me")
@@ -109,8 +108,8 @@ public class AuthController {
         return ResponseEntity.ok(Map.of(
                 "email", u.getEmail(),
                 "firstName", u.getFirstName(),
-                "lastName", u.getLastName()
-        ));
+                "lastName", u.getLastName(),
+                "role", u.getRole()));
     }
 
     // --- Logout (ลบคุกกี้)
@@ -140,8 +139,7 @@ public class AuthController {
         // ⚠ แนะนำให้ตัด debugToken ทิ้งตอนขึ้น production
         return ResponseEntity.ok(Map.of(
                 "message", "If an account exists, a reset link has been sent.",
-                "debugToken", optToken.orElse(null)
-        ));
+                "debugToken", optToken.orElse(null)));
     }
 
     @PostMapping("/reset-password")
@@ -156,10 +154,7 @@ public class AuthController {
     }
 
     @PostMapping("/delete-account")
-    @Operation(
-            summary = "Delete current user account (soft delete)",
-            security = @SecurityRequirement(name = "bearerAuth")
-    )
+    @Operation(summary = "Delete current user account (soft delete)", security = @SecurityRequirement(name = "bearerAuth"))
     public ResponseEntity<?> deleteAccount(HttpServletResponse response) {
         var authn = SecurityContextHolder.getContext().getAuthentication();
         if (authn == null || !authn.isAuthenticated() || "anonymousUser".equals(authn.getName())) {
@@ -186,10 +181,7 @@ public class AuthController {
 
     // --- Change email (ต้อง login)
     @PostMapping("/change-email")
-    @Operation(
-            summary = "Change email for current user",
-            security = @SecurityRequirement(name = "bearerAuth")
-    )
+    @Operation(summary = "Change email for current user", security = @SecurityRequirement(name = "bearerAuth"))
     public ResponseEntity<?> changeEmail(@RequestBody ChangeEmailRequest rq) {
         var authn = SecurityContextHolder.getContext().getAuthentication();
         if (authn == null || !authn.isAuthenticated() || "anonymousUser".equals(authn.getName())) {
@@ -203,7 +195,6 @@ public class AuthController {
 
         return ResponseEntity.ok(Map.of(
                 "message", "Email changed successfully. Please use the new email next time you login.",
-                "user", updatedProfile
-        ));
+                "user", updatedProfile));
     }
 }
