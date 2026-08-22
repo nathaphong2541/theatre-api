@@ -480,6 +480,12 @@ public class ProfileService {
             np.setCredits(List.of());
             np.setPartnerDetailById(Map.of());
             np.setAdditionalLanguages(List.of());
+            // ดึงชื่อจาก user มาใส่ profile
+            userRepo.findById(userId).ifPresent(u -> {
+                np.setFirstName(u.getFirstName());
+                np.setLastName(u.getLastName());
+                np.setEmail(u.getEmail());
+            });
             return repo.save(np);
         });
         return toResponse(p);
