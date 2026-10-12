@@ -16,7 +16,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.thaitheatre.api.model.dto.AuthResponse;
+import com.thaitheatre.api.common.InvalidCredentialException;
 import com.thaitheatre.api.model.dto.ChangeEmailRequest;
+import com.thaitheatre.api.model.dto.DeleteAccountRequest;
 import com.thaitheatre.api.model.dto.ForgotPasswordRequest;
 import com.thaitheatre.api.model.dto.GenericResponse;
 import com.thaitheatre.api.model.dto.LoginRequest;
@@ -50,6 +52,12 @@ public class AuthController {
     @Value("${app.cookie.max-age-seconds:7200}") // default 2 ชั่วโมง
     private long cookieMaxAgeSeconds;
 
+    // SameSite policy for the auth cookie. "Lax" works for localhost dev
+    // (cross-port XHR) and normal same-origin prod. Use "None" only with Secure+HTTPS
+    // when the UI and API are on genuinely different sites.
+    @Value("${app.cookie.same-site:Lax}")
+    private String cookieSameSite;
+
     private final UserRepository userRepository; // <— เพิ่ม
 
     public AuthController(AuthService auth, PasswordResetService prs, UserRepository userRepository) {
@@ -76,7 +84,7 @@ public class AuthController {
         ResponseCookie cookie = ResponseCookie.from(COOKIE_NAME, authRes.accessToken())
                 .httpOnly(true)
                 .secure(cookieSecure) // true เมื่ออยู่หลัง HTTPS
-                .sameSite("Strict") // ถ้าต้องการ cross-site form POST อาจใช้ Lax
+                .sameSite(cookieSameSite) // Lax by default (works on localhost dev)
                 .path("/")
                 .maxAge(Duration.ofSeconds(cookieMaxAgeSeconds))
                 .build();
@@ -119,7 +127,7 @@ public class AuthController {
         ResponseCookie cleared = ResponseCookie.from(COOKIE_NAME, "")
                 .httpOnly(true)
                 .secure(cookieSecure)
-                .sameSite("Strict")
+                .sameSite(cookieSameSite)
                 .path("/")
                 .maxAge(0) // expire ทันที
                 .build();
@@ -155,7 +163,8 @@ public class AuthController {
 
     @PostMapping("/delete-account")
     @Operation(summary = "Delete current user account (soft delete)", security = @SecurityRequirement(name = "bearerAuth"))
-    public ResponseEntity<?> deleteAccount(HttpServletResponse response) {
+    public ResponseEntity<?> deleteAccount(@RequestBody(required = false) DeleteAccountRequest rq,
+            HttpServletResponse response) {
         var authn = SecurityContextHolder.getContext().getAuthentication();
         if (authn == null || !authn.isAuthenticated() || "anonymousUser".equals(authn.getName())) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
@@ -163,14 +172,21 @@ public class AuthController {
         }
 
         String email = authn.getName(); // ตอนนี้ authName ยังใช้ email เหมือน /me
+        String currentPassword = (rq != null) ? rq.currentPassword() : null;
 
-        auth.deleteAccountByEmail(email);
+        try {
+            auth.deleteAccountByEmail(email, currentPassword);
+        } catch (InvalidCredentialException ex) {
+            // รหัสผ่านไม่ถูกต้อง -> อย่าลบ, อย่าเคลียร์ cookie
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("message", "Current password is incorrect"));
+        }
 
         // เคลียร์ cookie เหมือน logout
         ResponseCookie cleared = ResponseCookie.from(COOKIE_NAME, "")
                 .httpOnly(true)
                 .secure(cookieSecure)
-                .sameSite("Strict")
+                .sameSite(cookieSameSite)
                 .path("/")
                 .maxAge(0)
                 .build();

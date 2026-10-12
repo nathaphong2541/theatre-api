@@ -8,6 +8,8 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
+import com.thaitheatre.api.common.DelFlag;
+import com.thaitheatre.api.common.RecordStatus;
 import com.thaitheatre.api.model.entity.UserAccount;
 import com.thaitheatre.api.repository.UserRepository;
 import com.thaitheatre.api.security.CustomUserDetails;
@@ -35,6 +37,12 @@ public class UserDetailsServiceImpl implements UserDetailsService {
     }
 
     private UserDetails toUserDetails(UserAccount u) {
+        // Deleted / deactivated accounts must not authenticate (login OR via an
+        // existing cookie). Treat them as "not found" so no account info leaks.
+        if (u.getDelFlag() == DelFlag.Y || u.getRecordStatus() == RecordStatus.I) {
+            throw new UsernameNotFoundException("User not found");
+        }
+
         // ✅ ตอนนี้คุณ fix role เป็น USER อยู่
         // ถ้าในอนาคตมี role จริงใน DB ค่อย map เพิ่ม
         var authorities = List.of(new SimpleGrantedAuthority("ROLE_USER"));

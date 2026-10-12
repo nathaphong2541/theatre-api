@@ -73,6 +73,16 @@ public class SecurityConfig {
                         org.springframework.http.HttpMethod.GET,
                         "/api/public/scripts/**"
                 ).permitAll()
+                // ✅ public read-only master data (merged from officer API)
+                .requestMatchers(
+                        org.springframework.http.HttpMethod.GET,
+                        "/api/public/**"
+                ).permitAll()
+                // ✅ public work-location create (preserved from officer API behavior)
+                .requestMatchers(
+                        org.springframework.http.HttpMethod.POST,
+                        "/api/public/work-locations"
+                ).permitAll()
                 .requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**").permitAll()
                 .anyRequest().authenticated()
                 )

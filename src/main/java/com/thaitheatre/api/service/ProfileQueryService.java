@@ -15,7 +15,6 @@ import com.thaitheatre.api.model.dto.ProfileSearchRequest;
 import com.thaitheatre.api.model.entity.Profile;
 import com.thaitheatre.api.repository.ProfileRepository;
 
-import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 
@@ -50,11 +49,12 @@ public class ProfileQueryService {
         if (hasText(rq.getQ())) {
             String like = contains(rq.getQ());
 
+            // NOTE: do not include "title" here — it is a List<Integer> (profession ids),
+            // not a String, so lower()/like() cannot be applied to it.
             spec = spec.and((root, cq, cb) -> cb.or(
                     cb.like(cb.lower(root.get("firstName")), like),
                     cb.like(cb.lower(root.get("lastName")), like),
                     cb.like(cb.lower(root.get("pronouns")), like),
-                    cb.like(cb.lower(root.get("title")), like),
                     cb.like(cb.lower(root.get("location")), like),
                     cb.like(cb.lower(root.get("email")), like),
                     cb.like(cb.lower(root.get("phone")), like),
@@ -93,7 +93,8 @@ public class ProfileQueryService {
         spec = andLike(spec, "firstName", rq.getFirstName());
         spec = andLike(spec, "lastName", rq.getLastName());
         spec = andLike(spec, "pronouns", rq.getPronouns());
-        spec = andLike(spec, "title", rq.getTitle());
+        // "title" is a List<Integer> on the entity (profession ids) — cannot use LIKE.
+        // Filter professions via the id-list filter instead if needed.
         spec = andLike(spec, "location", rq.getLocation());
         spec = andLike(spec, "email", rq.getEmail());
         spec = andLike(spec, "phone", rq.getPhone());
@@ -103,14 +104,16 @@ public class ProfileQueryService {
         spec = andLike(spec, "video1", rq.getVideo1());
         spec = andLike(spec, "video2", rq.getVideo2());
 
-        // ----- lists (ANY MATCH / overlap) -----
-        spec = andAnyMatch(spec, "workLocations", rq.getWorkLocations());
-        spec = andAnyMatch(spec, "unions", rq.getUnions());
-        spec = andAnyMatch(spec, "experience", rq.getExperience());
-        spec = andAnyMatch(spec, "partners", rq.getPartners());
-        spec = andAnyMatch(spec, "genders", rq.getGenders());
-        spec = andAnyMatch(spec, "races", rq.getRaces());
-        spec = andAnyMatch(spec, "additionals", rq.getAdditionals());
+        // ----- JSONB id-list filters (ANY MATCH / overlap) -----
+        // These fields are stored as JSONB arrays, so we match with jsonb_path_exists.
+        spec = andJsonIdsContains(spec, "title", rq.getTitleIds());
+        spec = andJsonIdsContains(spec, "workLocations", rq.getWorkLocations());
+        spec = andJsonIdsContains(spec, "unions", rq.getUnions());
+        spec = andJsonIdsContains(spec, "experience", rq.getExperience());
+        spec = andJsonIdsContains(spec, "partners", rq.getPartners());
+        spec = andJsonIdsContains(spec, "genders", rq.getGenders());
+        spec = andJsonIdsContains(spec, "races", rq.getRaces());
+        spec = andJsonIdsContains(spec, "additionals", rq.getAdditionals());
 
         var page = repo.findAll(spec, pageable);
         return page.map(profileService::toResponse);
@@ -180,13 +183,39 @@ public class ProfileQueryService {
         return base.and((root, cq, cb) -> cb.like(cb.lower(root.get(field)), like));
     }
 
-    private static Specification<Profile> andAnyMatch(Specification<Profile> base, String field, List<Integer> values) {
-        if (values == null || values.isEmpty()) {
+    /**
+     * Match a top-level JSONB integer array column that contains ANY of the given ids.
+     * e.g. field "title" stored as [16,20] matches titleIds=[16].
+     */
+    private static Specification<Profile> andJsonIdsContains(
+            Specification<Profile> base,
+            String field,
+            List<Integer> ids) {
+
+        if (ids == null || ids.isEmpty()) {
             return base;
         }
+
         return base.and((root, cq, cb) -> {
-            var join = root.join(field, JoinType.LEFT);
-            return join.in(values);
+            List<Predicate> orPreds = new ArrayList<>();
+            for (Integer id : ids) {
+                if (id == null) {
+                    continue;
+                }
+                // $[*] ? (@ == <id>) : any element of the array equals id
+                String path = "$[*] ? (@ == " + id + ")";
+                orPreds.add(
+                        cb.isTrue(
+                                cb.function(
+                                        "jsonb_path_exists",
+                                        Boolean.class,
+                                        root.get(field),
+                                        cb.literal(path)
+                                )
+                        )
+                );
+            }
+            return cb.or(orPreds.toArray(Predicate[]::new));
         });
     }
 }

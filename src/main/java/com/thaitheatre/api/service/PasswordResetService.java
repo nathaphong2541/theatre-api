@@ -16,6 +16,10 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.MimeMessageHelper;
+
+import jakarta.mail.MessagingException;
+import jakarta.mail.internet.MimeMessage;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -57,6 +61,9 @@ public class PasswordResetService {
     // import java.util.Optional;
     public Optional<String> requestPasswordReset(String email, String appBaseUrl) {
         return userRepo.findByEmail(email.toLowerCase()).map(user -> {
+            // Invalidate any previous outstanding tokens so only the newest link works.
+            tokenRepo.markAllUsedForUser(user);
+
             String token = generateToken();
             String tokenHash = hashToken(token);
             Instant expiresAt = Instant.now().plus(tokenExpiryMinutes, ChronoUnit.MINUTES);
@@ -69,7 +76,7 @@ public class PasswordResetService {
             tokenRepo.save(prt);
 
             String resetUrl = appBaseUrl
-                    + "/en/auth/new-password"
+                    + "/auth/new-password"
                     + "?token=" + urlEncode(token)
                     + "&email=" + urlEncode(email);
 
@@ -107,26 +114,116 @@ public class PasswordResetService {
     }
 
     private void sendResetEmail(String toEmail, String name, String resetUrl) {
-        String subject = "ลิงก์รีเซ็ตรหัสผ่านของคุณ";
+        String subject = "รีเซ็ตรหัสผ่าน · THAI ART HUB";
+        String displayName = (name == null || name.isBlank()) ? "คุณ" : name;
+
+        // Plain-text fallback (for clients that don't render HTML + better deliverability).
         String text = String.format("""
                 สวัสดี %s,
 
-                ได้รับคำขอรีเซ็ตรหัสผ่านสำหรับบัญชีของคุณ หากเป็นคำขอจากคุณ ให้คลิกที่ลิงก์ด้านล่างเพื่อตั้งรหัสผ่านใหม่ (ลิงก์จะหมดอายุใน %d นาที):
+                เราได้รับคำขอรีเซ็ตรหัสผ่านสำหรับบัญชีของคุณที่ THAI ART HUB
+                หากเป็นคำขอจากคุณ เปิดลิงก์ด้านล่างเพื่อตั้งรหัสผ่านใหม่ (ลิงก์หมดอายุใน %d นาที):
+
                 %s
 
-                หากคุณไม่ได้ร้องขอ กรุณาไม่ดำเนินการใด ๆ
-                """, name, tokenExpiryMinutes, resetUrl);
+                หากคุณไม่ได้เป็นผู้ร้องขอ สามารถเพิกเฉยอีเมลฉบับนี้ได้ รหัสผ่านของคุณจะไม่เปลี่ยนแปลง
 
-        if (mailSender != null) {
+                — THAI ART HUB
+                """, displayName, tokenExpiryMinutes, resetUrl);
+
+        String html = buildResetEmailHtml(displayName, resetUrl, tokenExpiryMinutes);
+
+        if (mailSender == null) {
+            // fallback: log ไว้ก่อน ถ้ายังไม่ได้ตั้งค่าเมล
+            System.out.printf("[MAIL-FAKE] to=%s subject=%s body=%s%n", toEmail, subject, text);
+            return;
+        }
+
+        try {
+            MimeMessage mime = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mime, true, StandardCharsets.UTF_8.name());
+            helper.setTo(toEmail);
+            helper.setSubject(subject);
+            helper.setText(text, html); // (plainText, htmlText) -> multipart/alternative
+            mailSender.send(mime);
+        } catch (MessagingException e) {
+            // ถ้าสร้าง/ส่ง HTML ไม่ได้ ให้ fallback เป็น plain text แทนที่จะล้มเงียบ ๆ
             SimpleMailMessage message = new SimpleMailMessage();
             message.setTo(toEmail);
             message.setSubject(subject);
             message.setText(text);
             mailSender.send(message);
-        } else {
-            // fallback: log ไว้ก่อน ถ้ายังไม่ได้ตั้งค่าเมล
-            System.out.printf("[MAIL-FAKE] to=%s subject=%s body=%s%n", toEmail, subject, text);
         }
+    }
+
+    /** Branded, responsive HTML for the password-reset email. */
+    private String buildResetEmailHtml(String name, String resetUrl, long expiryMinutes) {
+        return """
+                <!DOCTYPE html>
+                <html lang="th">
+                <head>
+                  <meta charset="utf-8">
+                  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                </head>
+                <body style="margin:0;padding:0;background:#eef3ef;font-family:'Segoe UI',Tahoma,Arial,sans-serif;">
+                  <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="background:#eef3ef;padding:28px 12px;">
+                    <tr>
+                      <td align="center">
+                        <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 10px 30px rgba(20,123,126,0.12);">
+                          <!-- Header -->
+                          <tr>
+                            <td style="background:#147B7E;padding:26px 32px;">
+                              <div style="color:#ffffff;font-size:20px;font-weight:800;letter-spacing:0.5px;">THAI ART HUB</div>
+                              <div style="color:#bfe3df;font-size:11px;letter-spacing:2px;margin-top:2px;">PERFORMING ARTS · PROFILES · SCRIPTS</div>
+                            </td>
+                          </tr>
+                          <!-- Body -->
+                          <tr>
+                            <td style="padding:32px;">
+                              <h1 style="margin:0 0 8px;font-size:22px;color:#15302b;">รีเซ็ตรหัสผ่าน</h1>
+                              <p style="margin:0 0 18px;font-size:14px;line-height:1.8;color:#4a5a55;">
+                                สวัสดี <strong style="color:#15302b;">%s</strong>,<br>
+                                เราได้รับคำขอรีเซ็ตรหัสผ่านสำหรับบัญชีของคุณ หากเป็นคำขอจากคุณ
+                                กดปุ่มด้านล่างเพื่อตั้งรหัสผ่านใหม่
+                              </p>
+                              <!-- CTA -->
+                              <table role="presentation" cellpadding="0" cellspacing="0" style="margin:22px 0;">
+                                <tr>
+                                  <td style="border-radius:999px;background:#147B7E;">
+                                    <a href="%s" target="_blank"
+                                       style="display:inline-block;padding:13px 30px;font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:999px;">
+                                      ตั้งรหัสผ่านใหม่
+                                    </a>
+                                  </td>
+                                </tr>
+                              </table>
+                              <p style="margin:0 0 6px;font-size:12px;color:#7b8c86;">
+                                ลิงก์นี้จะหมดอายุใน <strong>%d นาที</strong>
+                              </p>
+                              <p style="margin:18px 0 0;font-size:12px;line-height:1.7;color:#7b8c86;">
+                                หากปุ่มกดไม่ได้ ให้คัดลอกลิงก์นี้ไปวางในเบราว์เซอร์:<br>
+                                <a href="%s" style="color:#147B7E;word-break:break-all;">%s</a>
+                              </p>
+                              <hr style="border:none;border-top:1px solid #e5ece8;margin:24px 0;">
+                              <p style="margin:0;font-size:12px;line-height:1.7;color:#9aa8a3;">
+                                หากคุณไม่ได้เป็นผู้ร้องขอ สามารถเพิกเฉยอีเมลฉบับนี้ได้
+                                รหัสผ่านของคุณจะไม่เปลี่ยนแปลง
+                              </p>
+                            </td>
+                          </tr>
+                          <!-- Footer -->
+                          <tr>
+                            <td style="background:#f4f8f6;padding:18px 32px;text-align:center;">
+                              <div style="font-size:11px;color:#9aa8a3;">© THAI ART HUB · มูลนิธิไทยเธียเตอร์</div>
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+                  </table>
+                </body>
+                </html>
+                """.formatted(name, resetUrl, expiryMinutes, resetUrl, resetUrl);
     }
 
     // validate token by hashing candidate and comparing to stored hash
@@ -156,34 +253,9 @@ public class PasswordResetService {
 
         String candidateHash = hashToken(token);
 
-        // ถ้ามี email → ใช้ logic เดิม (กันกรณีต้องการตรวจ email ให้ตรงกัน)
-        if (email != null && !email.isBlank()) {
-            Optional<UserAccount> ou = userRepo.findByEmail(email.toLowerCase());
-            if (ou.isEmpty()) {
-                return false;
-            }
-
-            UserAccount user = ou.get();
-            Optional<PasswordResetToken> opt
-                    = tokenRepo.findByUserAndUsedFalseAndExpiresAtAfter(user, Instant.now());
-            if (opt.isEmpty()) {
-                return false;
-            }
-
-            PasswordResetToken prt = opt.get();
-            if (!candidateHash.equalsIgnoreCase(prt.getTokenHash())) {
-                return false;
-            }
-
-            user.setPasswordHash(passwordEncoder.encode(newPassword));
-            userRepo.save(user);
-
-            prt.setUsed(true);
-            tokenRepo.save(prt);
-            return true;
-        }
-
-        // 🔥 กรณี email เป็น null หรือ "" → หา user จาก token โดยตรง
+        // หา token จาก hash โดยตรง (hash ไม่ซ้ำ จึงได้ใบที่ตรงกับลิงก์เสมอ แม้ user
+        // จะมี active token หลายใบ). วิธีเดิมที่หาโดย user แล้วค่อยเทียบ hash จะพังเมื่อ
+        // มีหลายใบ เพราะ query คืน Optional เดียวแบบไม่แน่นอน.
         Optional<PasswordResetToken> opt
                 = tokenRepo.findByTokenHashAndUsedFalseAndExpiresAtAfter(candidateHash, Instant.now());
         if (opt.isEmpty()) {
@@ -192,6 +264,14 @@ public class PasswordResetService {
 
         PasswordResetToken prt = opt.get();
         UserAccount user = prt.getUser();
+
+        // ถ้าส่ง email มาด้วย ให้ยืนยันว่า token เป็นของ user คนนั้นจริง
+        if (email != null && !email.isBlank()) {
+            if (user == null || user.getEmail() == null
+                    || !user.getEmail().equalsIgnoreCase(email.trim())) {
+                return false;
+            }
+        }
 
         user.setPasswordHash(passwordEncoder.encode(newPassword));
         userRepo.save(user);

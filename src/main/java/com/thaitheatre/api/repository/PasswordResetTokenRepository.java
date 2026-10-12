@@ -20,4 +20,11 @@ public interface PasswordResetTokenRepository extends JpaRepository<PasswordRese
             String tokenHash,
             Instant now
     );
+
+    // mark all of a user's still-valid tokens as used (invalidate old links on new request)
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.transaction.annotation.Transactional
+    @org.springframework.data.jpa.repository.Query(
+            "update PasswordResetToken t set t.used = true where t.user = :user and t.used = false")
+    int markAllUsedForUser(com.thaitheatre.api.model.entity.UserAccount user);
 }

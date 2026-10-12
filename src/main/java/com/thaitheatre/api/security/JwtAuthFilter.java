@@ -38,6 +38,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 || matcher.match("/api/profiles", path)
                 || matcher.match("/api/auth/forgot-password", path)
                 || matcher.match("/api/auth/reset-password", path)
+                // ✅ public read-only endpoints (merged from officer API)
+                || matcher.match("/api/public/**", path)
                 // ✅ swagger / error / actuator
                 || matcher.match("/swagger-ui.html", path)
                 || matcher.match("/swagger-ui/**", path)

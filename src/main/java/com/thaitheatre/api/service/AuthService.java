@@ -38,18 +38,26 @@ public class AuthService {
     }
 
     public UserProfileDTO register(RegisterRequest rq) {
-        if (repo.existsByEmail(rq.email().trim().toLowerCase())) {
+        String email = rq.email().trim().toLowerCase();
+
+        // Reuse the row if this email belongs to a previously deleted account:
+        // reactivate it with the new details instead of blocking the email forever.
+        UserAccount existing = repo.findByEmail(email).orElse(null);
+        if (existing != null && existing.getDelFlag() != DelFlag.Y
+                && existing.getRecordStatus() != RecordStatus.I) {
+            // active account already uses this email
             throw new EmailAlreadyUsedException();
         }
-        UserAccount u = new UserAccount();
+
+        UserAccount u = (existing != null) ? existing : new UserAccount();
         u.setFirstName(rq.firstName().trim());
         u.setLastName(rq.lastName().trim());
         u.setRole(UserRole.USER);
-        u.setEmail(rq.email().trim().toLowerCase());
+        u.setEmail(email);
         u.setPasswordHash(encoder.encode(rq.password()));
         u.setPolicyConfirmed(rq.policyConfirm());
 
-        // ✅ บังคับค่าเริ่มต้นเสมอ
+        // ✅ บังคับค่าเริ่มต้นเสมอ (reactivate ถ้าเป็นบัญชีที่เคยถูกลบ)
         u.setRecordStatus(RecordStatus.A);
         u.setDelFlag(DelFlag.N);
 
@@ -78,6 +86,11 @@ public class AuthService {
         var user = repo.findByEmail(email)
                 .orElseThrow(() -> new InvalidCredentialException("Invalid email or password"));
 
+        // Defensive: refuse deleted/deactivated accounts (same message, no info leak).
+        if (user.getDelFlag() == DelFlag.Y || user.getRecordStatus() == RecordStatus.I) {
+            throw new InvalidCredentialException("Invalid email or password");
+        }
+
         String token = jwt.generate(String.valueOf(user.getId()));
         long expSec = jwt.getExpMillis() / 1000;
 
@@ -92,9 +105,14 @@ public class AuthService {
                         user.getPolicyConfirmed()));
     }
 
-    public void deleteAccountByEmail(String email) {
+    public void deleteAccountByEmail(String email, String currentPassword) {
         var user = repo.findByEmail(email)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+        // ✅ ต้องยืนยันด้วยรหัสผ่านปัจจุบันก่อนลบบัญชี
+        if (currentPassword == null || !encoder.matches(currentPassword, user.getPasswordHash())) {
+            throw new InvalidCredentialException("Current password is incorrect");
+        }
 
         // ✅ ทำ soft-delete ตาม enum ที่คุณใช้
         user.setRecordStatus(RecordStatus.I);

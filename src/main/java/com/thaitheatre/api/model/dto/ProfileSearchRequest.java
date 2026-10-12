@@ -32,6 +32,8 @@ public class ProfileSearchRequest {
     private String video2;
 
     // ----- lists -----
+    // profession ids (entity field "title" is a JSONB List<Integer>)
+    private List<Integer> titleIds;
     private List<Integer> workLocations;
     private List<Integer> unions;
     private List<Integer> experience;

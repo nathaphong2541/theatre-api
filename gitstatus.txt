@@ -1,0 +1,14 @@
+The system cannot find the path specified.
+## main...origin/main
+ M src/main/java/com/thaitheatre/api/security/JwtAuthFilter.java
+ M src/main/java/com/thaitheatre/api/security/config/SecurityConfig.java
+ M src/main/resources/application-prod.properties
+ M src/main/resources/application.properties
+?? build2.txt
+?? gitlog.txt
+?? gitremote.txt
+?? gitstatus.txt
+?? src/main/java/com/thaitheatre/api/controller/publice/
+?? src/main/java/com/thaitheatre/api/model/publice/
+?? src/main/java/com/thaitheatre/api/repository/publice/
+?? src/main/java/com/thaitheatre/api/service/publice/
