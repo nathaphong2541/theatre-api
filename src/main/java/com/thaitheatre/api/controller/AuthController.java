@@ -114,6 +114,7 @@ public class AuthController {
         var u = userOpt.get();
 
         return ResponseEntity.ok(Map.of(
+                "id", u.getId(),
                 "email", u.getEmail(),
                 "firstName", u.getFirstName(),
                 "lastName", u.getLastName(),
@@ -141,13 +142,25 @@ public class AuthController {
     @Operation(summary = "Request password reset (email)")
     public ResponseEntity<?> forgotPassword(@RequestBody ForgotPasswordRequest rq) {
 
+        if (rq == null || rq.email() == null || rq.email().isBlank()) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "Email is required."));
+        }
+
         var optToken = prs.requestPasswordReset(rq.email(), frontendBase);
 
+        // ไม่พบอีเมลในระบบ → แจ้งชัดเจนว่าไม่พบ (ไม่ส่งลิงก์มั่ว)
+        if (optToken.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("message", "Email not found."));
+        }
+
+        // พบอีเมล → ส่งลิงก์รีเซ็ตแล้ว
         // ✅ เวอร์ชัน Dev: ส่ง token กลับไปด้วย (เพื่อ debug / ทดสอบใน Postman)
         // ⚠ แนะนำให้ตัด debugToken ทิ้งตอนขึ้น production
         return ResponseEntity.ok(Map.of(
-                "message", "If an account exists, a reset link has been sent.",
-                "debugToken", optToken.orElse(null)));
+                "message", "A reset link has been sent.",
+                "debugToken", optToken.get()));
     }
 
     @PostMapping("/reset-password")

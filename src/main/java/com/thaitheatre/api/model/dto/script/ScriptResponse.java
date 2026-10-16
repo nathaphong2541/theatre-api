@@ -14,6 +14,7 @@ public class ScriptResponse {
     private String title;
     private String description;
     private String tags;
+    private String category; // SCRIPT = บทละคร, RESEARCH = เรื่องเล่าและงานวิจัย
 
     private List<ScriptImageResponse> images;
 

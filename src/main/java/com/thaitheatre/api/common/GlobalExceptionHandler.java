@@ -36,6 +36,32 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(body);
     }
 
+    // บัญชีถูกลบไปแล้ว (soft delete) แต่พยายามเข้าสู่ระบบด้วยรหัสผ่านที่ถูกต้อง
+    @ExceptionHandler(AccountDeletedException.class)
+    public ResponseEntity<ErrorResponse> handleAccountDeleted(
+            AccountDeletedException ex,
+            HttpServletRequest request
+    ) {
+        ErrorResponse body = new ErrorResponse(
+                "ACCOUNT_DELETED",
+                ex.getMessage()
+        );
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
+    }
+
+    // ไม่มีสิทธิ์ทำรายการ (เช่น ลบ/แก้บทละครที่ไม่ใช่ของตัวเอง) → 403
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleAccessDenied(
+            org.springframework.security.access.AccessDeniedException ex,
+            HttpServletRequest request
+    ) {
+        ErrorResponse body = new ErrorResponse(
+                "FORBIDDEN",
+                ex.getMessage()
+        );
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
+    }
+
     // ใช้กับ register ซ้ำอีเมล
     @ExceptionHandler(EmailAlreadyUsedException.class)
     public ResponseEntity<ErrorResponse> handleEmailAlreadyUsed(

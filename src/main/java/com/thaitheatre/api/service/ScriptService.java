@@ -33,7 +33,7 @@ public interface ScriptService {
 
         List<ScriptResponse> getAllScripts();
 
-        void deleteScript(Long id);
+        void deleteScript(Long id, Long currentUserId);
 
         List<ScriptResponse> getMyScripts(Long userId);
 

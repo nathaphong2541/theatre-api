@@ -1,0 +1,17 @@
+-- =====================================================================
+--  V1 — BASELINE (no-op)
+--
+--  This project's schema was originally created by Hibernate ddl-auto on
+--  an existing database. Flyway is being introduced AFTER the fact, so V1
+--  is only a baseline marker, not a schema definition.
+--
+--  How it behaves:
+--   * Existing databases: `spring.flyway.baseline-on-migrate=true` with
+--     `baseline-version=1` stamps the current schema as V1 and this file is
+--     NEVER executed (Flyway skips the version equal to the baseline).
+--   * Future real changes start at V2 and up.
+--
+--  Do NOT add table definitions here. New schema changes go in a new
+--  V{n}__description.sql file with the next version number.
+-- =====================================================================
+SELECT 1;

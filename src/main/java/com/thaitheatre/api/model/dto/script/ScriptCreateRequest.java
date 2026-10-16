@@ -8,5 +8,6 @@ public class ScriptCreateRequest {
     private String title;
     private String description;
     private String tags; // หรือใช้ List<String> ก็ได้ถ้าจะ map เอง
+    private String category; // SCRIPT = บทละคร, RESEARCH = เรื่องเล่าและงานวิจัย
     private String pdfVersionName;
 }

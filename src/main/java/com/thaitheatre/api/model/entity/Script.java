@@ -49,6 +49,12 @@ public class Script {
     @Column(length = 500)
     private String tags;
 
+    // หมวดของผลงาน: SCRIPT = บทละคร, RESEARCH = เรื่องเล่าและงานวิจัย
+    // ค่าเริ่มต้น SCRIPT เพื่อให้ข้อมูลเดิมถูกจัดเป็นบทละครโดยอัตโนมัติ
+    @Column(length = 32, nullable = false)
+    @Builder.Default
+    private String category = "SCRIPT";
+
     // ---------- Images ----------
     @Builder.Default
     @OneToMany(mappedBy = "script", cascade = CascadeType.ALL, orphanRemoval = true)

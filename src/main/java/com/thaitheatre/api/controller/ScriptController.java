@@ -81,7 +81,8 @@ public class ScriptController {
     // DELETE
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteScript(@PathVariable Long id) {
-        scriptService.deleteScript(id);
+        Long userId = getCurrentUserId();
+        scriptService.deleteScript(id, userId);
         return ResponseEntity.noContent().build();
     }
 

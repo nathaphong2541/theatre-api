@@ -23,6 +23,9 @@ import jakarta.mail.internet.MimeMessage;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import com.thaitheatre.api.common.AccountDeletedException;
+import com.thaitheatre.api.common.DelFlag;
+import com.thaitheatre.api.common.RecordStatus;
 import com.thaitheatre.api.model.entity.PasswordResetToken;
 import com.thaitheatre.api.model.entity.UserAccount;
 import com.thaitheatre.api.repository.PasswordResetTokenRepository;
@@ -61,6 +64,13 @@ public class PasswordResetService {
     // import java.util.Optional;
     public Optional<String> requestPasswordReset(String email, String appBaseUrl) {
         return userRepo.findByEmail(email.toLowerCase()).map(user -> {
+            // บัญชีที่ถูกลบ (soft delete) ไม่ควรรีเซ็ตรหัสผ่าน แต่ก็ไม่ควรขึ้นว่า "ไม่พบอีเมล"
+            // เพราะอีเมลนั้นมีอยู่จริง → แจ้งว่าบัญชีถูกลบและให้ลงทะเบียนใหม่.
+            if (user.getDelFlag() == DelFlag.Y || user.getRecordStatus() == RecordStatus.I) {
+                throw new AccountDeletedException(
+                        "This account has been deleted. Please register again.");
+            }
+
             // Invalidate any previous outstanding tokens so only the newest link works.
             tokenRepo.markAllUsedForUser(user);
 

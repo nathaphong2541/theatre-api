@@ -7,6 +7,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import com.thaitheatre.api.common.DelFlag;
+import com.thaitheatre.api.common.AccountDeletedException;
 import com.thaitheatre.api.common.EmailAlreadyUsedException;
 import com.thaitheatre.api.common.InvalidCredentialException;
 import com.thaitheatre.api.common.RecordStatus;
@@ -80,15 +81,30 @@ public class AuthService {
             var auth = new UsernamePasswordAuthenticationToken(email, rq.password());
             authManager.authenticate(auth); // ถ้าผิด → AuthenticationException
         } catch (AuthenticationException ex) {
+            // UserDetailsServiceImpl ปฏิเสธบัญชีที่ถูกลบ (โยน UsernameNotFound) ตั้งแต่ก่อน
+            // ตรวจรหัสผ่าน ทำให้ authenticate ล้มเสมอสำหรับบัญชีที่ถูกลบ. ตรงนี้จึงเช็กเองว่า
+            // ถ้าเป็นบัญชีที่ถูกลบ "และรหัสผ่านถูกต้อง" ให้แจ้งข้อความเฉพาะ (เจ้าของบัญชีจริงเท่านั้น
+            // ที่กรอกรหัสผ่านถูก จึงไม่รั่วข้อมูลให้คนที่เดารหัสผ่านไม่ได้).
+            repo.findByEmail(email).ifPresent(existing -> {
+                boolean deleted = existing.getDelFlag() == DelFlag.Y
+                        || existing.getRecordStatus() == RecordStatus.I;
+                boolean passwordMatches = existing.getPasswordHash() != null
+                        && encoder.matches(rq.password(), existing.getPasswordHash());
+                if (deleted && passwordMatches) {
+                    throw new AccountDeletedException(
+                            "This account has been deleted. Please register again.");
+                }
+            });
             throw new InvalidCredentialException("Invalid email or password");
         }
 
         var user = repo.findByEmail(email)
                 .orElseThrow(() -> new InvalidCredentialException("Invalid email or password"));
 
-        // Defensive: refuse deleted/deactivated accounts (same message, no info leak).
+        // Defensive: refuse deleted/deactivated accounts.
         if (user.getDelFlag() == DelFlag.Y || user.getRecordStatus() == RecordStatus.I) {
-            throw new InvalidCredentialException("Invalid email or password");
+            throw new AccountDeletedException(
+                    "This account has been deleted. Please register again.");
         }
 
         String token = jwt.generate(String.valueOf(user.getId()));

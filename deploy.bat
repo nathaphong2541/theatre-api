@@ -47,10 +47,21 @@ if errorlevel 1 (
   echo !! properties upload failed. Aborting.
   exit /b 1
 )
+REM Also ship docker-compose.yml so container env/volume changes (e.g. the
+REM upload dir env vars) actually reach the VM before we recreate the container.
+call gcloud compute scp "..\deploy\docker-compose.yml" %VM%:%UPLOAD_DIR%/docker-compose.yml --project=%PROJECT% --zone=%ZONE% --tunnel-through-iap
+if errorlevel 1 (
+  echo !! docker-compose.yml upload failed. Aborting.
+  exit /b 1
+)
 
 echo.
-echo === [4/5] Publishing into %APP_DIR% and restarting the container ===
-call gcloud compute ssh %VM% --project=%PROJECT% --zone=%ZONE% --tunnel-through-iap --command="sudo mkdir -p %APP_DIR% && sudo cp %UPLOAD_DIR%/app.jar %APP_DIR%/app.jar && sudo cp %UPLOAD_DIR%/application.properties %APP_DIR%/application.properties && sudo docker restart %CONTAINER% && echo RESTARTED"
+echo === [4/5] Publishing into %APP_DIR% and recreating the container ===
+REM Recreate (not just restart) so docker-compose env vars / volume changes take
+REM effect — e.g. APP_FILES_PROFILE_DIR that points uploads into the shared
+REM /opt/thaitheatre/uploads volume. `docker restart` alone keeps the OLD
+REM container definition and would ignore compose changes.
+call gcloud compute ssh %VM% --project=%PROJECT% --zone=%ZONE% --tunnel-through-iap --command="sudo mkdir -p %APP_DIR% && sudo cp %UPLOAD_DIR%/app.jar %APP_DIR%/app.jar && sudo cp %UPLOAD_DIR%/application.properties %APP_DIR%/application.properties && sudo cp %UPLOAD_DIR%/docker-compose.yml /opt/thaitheatre/docker-compose.yml && sudo mkdir -p /opt/thaitheatre/uploads/profile/resume /opt/thaitheatre/uploads/profile/performance /opt/thaitheatre/uploads/scripts/pdf && cd /opt/thaitheatre && (sudo docker compose up -d --force-recreate api || sudo docker-compose up -d --force-recreate api || sudo docker restart %CONTAINER%) && echo RESTARTED"
 if errorlevel 1 (
   echo !! Publish/restart failed.
   exit /b 1

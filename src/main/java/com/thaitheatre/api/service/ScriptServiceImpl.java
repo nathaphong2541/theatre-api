@@ -56,6 +56,7 @@ public class ScriptServiceImpl implements ScriptService {
         script.setTitle(request.getTitle());
         script.setDescription(request.getDescription());
         script.setTags(request.getTags());
+        script.setCategory(normalizeCategory(request.getCategory()));
         script.setCreatedBy(currentUserId);
         script.setUpdatedBy(currentUserId);
 
@@ -123,6 +124,7 @@ public class ScriptServiceImpl implements ScriptService {
         script.setTitle(request.getTitle());
         script.setDescription(request.getDescription());
         script.setTags(request.getTags());
+        script.setCategory(normalizeCategory(request.getCategory()));
         script.setUpdatedBy(currentUserId);
 
         // ✅ ถ้ามี PDF ใหม่ → ลบไฟล์เก่า + เซฟใหม่ + เพิ่ม version ใหม่
@@ -223,9 +225,15 @@ public class ScriptServiceImpl implements ScriptService {
     }
 
     @Override
-    public void deleteScript(Long id) {
+    public void deleteScript(Long id, Long currentUserId) {
         Script script = scriptRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Script not found"));
+
+        // ✅ เฉพาะเจ้าของเท่านั้นที่ลบได้
+        if (currentUserId == null || !currentUserId.equals(script.getCreatedBy())) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "You do not have permission to delete this script");
+        }
 
         // ลบไฟล์จริงด้วย (optional)
         if (script.getImages() != null) {
@@ -321,6 +329,17 @@ public class ScriptServiceImpl implements ScriptService {
         }
     }
 
+    /**
+     * Normalize the category to one of the known values. Anything unknown/blank
+     * falls back to SCRIPT so legacy rows and bad input stay under บทละคร.
+     */
+    private String normalizeCategory(String raw) {
+        if (raw != null && "RESEARCH".equalsIgnoreCase(raw.trim())) {
+            return "RESEARCH";
+        }
+        return "SCRIPT";
+    }
+
     private ScriptResponse mapToResponse(Script script) {
         List<ScriptImageResponse> imageResponses = script.getImages() == null
                 ? List.of()
@@ -346,6 +365,7 @@ public class ScriptServiceImpl implements ScriptService {
                 .title(script.getTitle())
                 .description(script.getDescription())
                 .tags(script.getTags())
+                .category(normalizeCategory(script.getCategory()))
                 .images(imageResponses)
                 .pdfPath(toScriptPdfUrl(script.getPdfPath()))
                 .createdAt(script.getCreatedAt())
