@@ -11,6 +11,7 @@ import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -493,9 +494,31 @@ public class ProfileService {
 
     @Transactional(readOnly = true)
     public ProfileResponse getByUserIdPublic(Long userId) {
-        return repo.findByUserId(userId)
-                .map(this::toResponse)
+        var profile = repo.findByUserId(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Profile not found"));
+
+        // Privacy gate: a private profile is only viewable by its owner.
+        // For anyone else (anonymous or a different user) we return 404 so we
+        // don't leak the existence of the profile.
+        if (profile.isPrivateProfile() && !isCurrentUser(userId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Profile not found");
+        }
+
+        return toResponse(profile);
+    }
+
+    /** True when the authenticated caller owns the given profile userId. */
+    private boolean isCurrentUser(Long userId) {
+        if (userId == null) {
+            return false;
+        }
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getName())) {
+            return false;
+        }
+        return userRepo.findByEmail(auth.getName())
+                .map(u -> userId.equals(u.getId()))
+                .orElse(false);
     }
 
     @Transactional

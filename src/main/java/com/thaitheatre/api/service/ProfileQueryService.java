@@ -83,7 +83,10 @@ public class ProfileQueryService {
         spec = andCreditsJsonIdsContains(spec, "skillIds", rq.getCreditSkillIds());
 
         // ----- flags (Boolean) -----
-        spec = andEq(spec, "privateProfile", rq.getPrivateProfile());
+        // Privacy gate: the public directory must NEVER expose profiles that are
+        // marked private. This is enforced unconditionally and ignores any
+        // client-supplied privateProfile value so callers cannot opt back in.
+        spec = spec.and((root, cq, cb) -> cb.isFalse(root.get("privateProfile")));
         spec = andEq(spec, "profileIsCompany", rq.getProfileIsCompany());
         spec = andEq(spec, "multiLang", rq.getMultiLang());
         spec = andEq(spec, "travel", rq.getTravel());
