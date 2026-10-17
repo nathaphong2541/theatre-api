@@ -22,7 +22,7 @@ public class SkillPublicService {
     private final SkillPublicRepository repo;
 
     public ApiPage<SkillPublicDto> list(Integer page, Integer size, Long positionId) {
-        Pageable pg = PageRequest.of(page, size, Sort.by("id").descending());
+        Pageable pg = PageRequest.of(page, size, Sort.by("id").ascending());
 
         Page<Skill> p = (positionId == null)
                 ? repo.findByDelFlagAndRecordStatus("N", "A", pg)

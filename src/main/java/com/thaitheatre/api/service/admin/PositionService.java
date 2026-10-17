@@ -27,7 +27,7 @@ public class PositionService {
 
     public ApiPage<PositionDto> list(int page, int size) {
         Page<Position> p = repo.findAll(
-                PageRequest.of(page, size, Sort.by("id").descending())
+                PageRequest.of(page, size, Sort.by("id").ascending())
         );
 
         var items = p.getContent()
@@ -95,7 +95,7 @@ public class PositionService {
 
         Page<Position> p = repo.findByDepartment_Id(
                 departmentId,
-                PageRequest.of(page, size, Sort.by("id").descending())
+                PageRequest.of(page, size, Sort.by("id").ascending())
         );
 
         var items = p.getContent()

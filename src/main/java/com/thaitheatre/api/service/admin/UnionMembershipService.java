@@ -24,7 +24,7 @@ public class UnionMembershipService {
 
     public ApiPage<UnionMembershipDto> list(int page, int size) {
         Page<UnionMembership> p = repo.findAll(
-                PageRequest.of(page, size, Sort.by("id").descending())
+                PageRequest.of(page, size, Sort.by("id").ascending())
         );
 
         var items = p.getContent()

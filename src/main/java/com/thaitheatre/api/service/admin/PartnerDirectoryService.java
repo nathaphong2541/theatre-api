@@ -25,7 +25,7 @@ public class PartnerDirectoryService {
 
     public ApiPage<PartnerDirectoryDto> list(int page, int size) {
         Page<PartnerDirectory> p = repo.findAll(
-                PageRequest.of(page, size, Sort.by("id").descending())
+                PageRequest.of(page, size, Sort.by("id").ascending())
         );
 
         var items = p.getContent()

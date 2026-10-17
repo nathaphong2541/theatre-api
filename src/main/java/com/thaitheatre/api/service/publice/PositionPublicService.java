@@ -22,7 +22,7 @@ public class PositionPublicService {
     private final PositionPublicRepository repo;
 
     public ApiPage<PositionPublicDto> list(Integer page, Integer size, Long departmentId) {
-        Pageable pg = PageRequest.of(page, size, Sort.by("id").descending());
+        Pageable pg = PageRequest.of(page, size, Sort.by("id").ascending());
 
         Page<Position> p = (departmentId == null)
                 ? repo.findByDelFlagAndRecordStatus("N", "A", pg)
@@ -51,7 +51,7 @@ public class PositionPublicService {
 
         Page<Position> p = repo.findByDepartment_Id(
                 departmentId,
-                PageRequest.of(page, size, Sort.by("id").descending()));
+                PageRequest.of(page, size, Sort.by("id").ascending()));
 
         var items = p.getContent()
                 .stream()

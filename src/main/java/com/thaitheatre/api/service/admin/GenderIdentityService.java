@@ -24,7 +24,7 @@ public class GenderIdentityService {
 
     public ApiPage<GenderIdentityDto> list(int page, int size) {
         Page<GenderIdentity> p = repo.findAll(
-                PageRequest.of(page, size, Sort.by("id").descending())
+                PageRequest.of(page, size, Sort.by("id").ascending())
         );
 
         var items = p.getContent()

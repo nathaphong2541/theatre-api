@@ -24,7 +24,7 @@ public class GenderIdentityPublicService {
         Page<GenderIdentity> p = repo.findByDelFlagAndRecordStatus(
                 "N",
                 "A",
-                PageRequest.of(page, size, Sort.by("id").descending()));
+                PageRequest.of(page, size, Sort.by("id").ascending()));
 
         var items = p.getContent()
                 .stream()
