@@ -9,5 +9,6 @@ public class ScriptCreateRequest {
     private String description;
     private String tags; // หรือใช้ List<String> ก็ได้ถ้าจะ map เอง
     private String category; // SCRIPT = บทละคร, RESEARCH = เรื่องเล่าและงานวิจัย
+    private String copyrightOwner; // เจ้าของลิขสิทธิ์ (optional)
     private String pdfVersionName;
 }

@@ -57,6 +57,7 @@ public class ScriptServiceImpl implements ScriptService {
         script.setDescription(request.getDescription());
         script.setTags(request.getTags());
         script.setCategory(normalizeCategory(request.getCategory()));
+        script.setCopyrightOwner(request.getCopyrightOwner());
         script.setCreatedBy(currentUserId);
         script.setUpdatedBy(currentUserId);
 
@@ -125,6 +126,7 @@ public class ScriptServiceImpl implements ScriptService {
         script.setDescription(request.getDescription());
         script.setTags(request.getTags());
         script.setCategory(normalizeCategory(request.getCategory()));
+        script.setCopyrightOwner(request.getCopyrightOwner());
         script.setUpdatedBy(currentUserId);
 
         // ✅ ถ้ามี PDF ใหม่ → ลบไฟล์เก่า + เซฟใหม่ + เพิ่ม version ใหม่
@@ -366,6 +368,7 @@ public class ScriptServiceImpl implements ScriptService {
                 .description(script.getDescription())
                 .tags(script.getTags())
                 .category(normalizeCategory(script.getCategory()))
+                .copyrightOwner(script.getCopyrightOwner())
                 .images(imageResponses)
                 .pdfPath(toScriptPdfUrl(script.getPdfPath()))
                 .createdAt(script.getCreatedAt())

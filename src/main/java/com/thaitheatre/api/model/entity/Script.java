@@ -49,6 +49,10 @@ public class Script {
     @Column(length = 500)
     private String tags;
 
+    // เจ้าของลิขสิทธิ์ (แสดงในหน้ารายละเอียดผลงาน) เช่น "Author's Name"
+    @Column(name = "copyright_owner", length = 255)
+    private String copyrightOwner;
+
     // หมวดของผลงาน: SCRIPT = บทละคร, RESEARCH = เรื่องเล่าและงานวิจัย
     // ค่าเริ่มต้น SCRIPT เพื่อให้ข้อมูลเดิมถูกจัดเป็นบทละครโดยอัตโนมัติ
     @Column(length = 32, nullable = false)
