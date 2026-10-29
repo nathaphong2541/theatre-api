@@ -10,6 +10,15 @@ public class ProfileSearchRequest {
     // ----- free text -----
     private String q;
 
+    /**
+     * How strictly selected id-filters (e.g. professions) must match:
+     *   "relevant" (default) — match ANY selected id (OR); results can be
+     *                          ordered by how many ids matched (most first).
+     *   "all"                — match ALL selected ids (AND); only profiles that
+     *                          satisfy every selected filter are returned.
+     */
+    private String matchMode;
+
     // ----- flags -----
     private Boolean privateProfile;
     private Boolean profileIsCompany;

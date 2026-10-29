@@ -62,6 +62,29 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
     }
 
+    // Bean-validation failures (@Size/@Email/@NotBlank on request DTOs) → 400 with
+    // a specific code + field so the client can show a clear reason instead of a
+    // generic "could not create account". Password-length failures get their own
+    // code so the UI can point at the password rule.
+    @ExceptionHandler(org.springframework.web.bind.MethodArgumentNotValidException.class)
+    public ResponseEntity<ErrorResponse> handleValidation(
+            org.springframework.web.bind.MethodArgumentNotValidException ex) {
+        var fieldError = ex.getBindingResult().getFieldError();
+        String field = fieldError != null ? fieldError.getField() : null;
+        String defaultMsg = fieldError != null ? fieldError.getDefaultMessage() : "Invalid request";
+
+        String code = "VALIDATION_ERROR";
+        String message = (field != null ? field + ": " : "") + defaultMsg;
+        if ("password".equals(field)) {
+            code = "WEAK_PASSWORD";
+            message = "Password must be at least 8 characters.";
+        } else if ("email".equals(field)) {
+            code = "INVALID_EMAIL";
+            message = "Please enter a valid email address.";
+        }
+        return ResponseEntity.badRequest().body(new ErrorResponse(code, message));
+    }
+
     // ใช้กับ register ซ้ำอีเมล
     @ExceptionHandler(EmailAlreadyUsedException.class)
     public ResponseEntity<ErrorResponse> handleEmailAlreadyUsed(

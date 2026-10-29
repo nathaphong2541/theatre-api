@@ -30,18 +30,39 @@ public class ProfileQueryService {
             rq = new ProfileSearchRequest();
         }
 
+        // "all" = every selected id must match (AND). Anything else = "relevant"
+        // (match ANY, i.e. OR — the original behaviour).
+        final boolean matchAll = "all".equalsIgnoreCase(rq.getMatchMode());
+
+        // Order by relevance when the caller asked for it AND there are ids to
+        // rank by. Relevance = how many of the selected profession ids a profile
+        // has (more matches first). Only meaningful in "relevant" mode.
+        final List<Integer> rankIds = (rq.getTitleIds() == null) ? List.of() : rq.getTitleIds();
+        final boolean sortByRelevance = !matchAll
+                && isRelevanceSort(pageable)
+                && !rankIds.isEmpty();
+
         // default pageable
         if (pageable == null) {
             pageable = PageRequest.of(0, 20, Sort.by(Sort.Direction.DESC, "updatedAt"));
-        } else if (pageable.getSort().isUnsorted()) {
+        } else if (pageable.getSort().isUnsorted() || sortByRelevance) {
+            // Relevance ordering is applied manually via cq.orderBy below, so strip
+            // any Spring sort (the "relevant" token isn't a real entity property).
             pageable = PageRequest.of(
                     pageable.getPageNumber(),
                     pageable.getPageSize(),
-                    Sort.by(Sort.Direction.DESC, "updatedAt"));
+                    sortByRelevance ? Sort.unsorted() : Sort.by(Sort.Direction.DESC, "updatedAt"));
         }
 
         Specification<Profile> spec = Specification.where((root, cq, cb) -> {
             cq.distinct(true);
+            // Rank by number of matching profession ids (desc), then newest.
+            if (sortByRelevance && Long.class != cq.getResultType() && long.class != cq.getResultType()) {
+                var score = relevanceScore(root, cq, cb, rankIds);
+                if (score != null) {
+                    cq.orderBy(cb.desc(score), cb.desc(root.get("updatedAt")));
+                }
+            }
             return cb.conjunction();
         });
 
@@ -109,7 +130,7 @@ public class ProfileQueryService {
 
         // ----- JSONB id-list filters (ANY MATCH / overlap) -----
         // These fields are stored as JSONB arrays, so we match with jsonb_path_exists.
-        spec = andJsonIdsContains(spec, "title", rq.getTitleIds());
+        spec = andJsonIdsContains(spec, "title", rq.getTitleIds(), matchAll);
         spec = andJsonIdsContains(spec, "workLocations", rq.getWorkLocations());
         spec = andJsonIdsContains(spec, "unions", rq.getUnions());
         spec = andJsonIdsContains(spec, "experience", rq.getExperience());
@@ -119,7 +140,10 @@ public class ProfileQueryService {
         spec = andJsonIdsContains(spec, "additionals", rq.getAdditionals());
 
         var page = repo.findAll(spec, pageable);
-        return page.map(profileService::toResponse);
+        // Directory is a public listing: expose only sections each member made
+        // public (and never the login email). Private profiles are already
+        // excluded by the isFalse(privateProfile) predicate above.
+        return page.map(profileService::toPublicResponse);
     }
 
     // ---------- credits JSON contains ids ----------
@@ -194,31 +218,86 @@ public class ProfileQueryService {
             Specification<Profile> base,
             String field,
             List<Integer> ids) {
+        // Default: match ANY (OR).
+        return andJsonIdsContains(base, field, ids, false);
+    }
+
+    /**
+     * Match a JSONB integer-array column against a list of ids.
+     *   matchAll = false → the array contains ANY of the ids (OR).
+     *   matchAll = true  → the array contains ALL of the ids (AND).
+     */
+    private static Specification<Profile> andJsonIdsContains(
+            Specification<Profile> base,
+            String field,
+            List<Integer> ids,
+            boolean matchAll) {
 
         if (ids == null || ids.isEmpty()) {
             return base;
         }
 
         return base.and((root, cq, cb) -> {
-            List<Predicate> orPreds = new ArrayList<>();
+            List<Predicate> preds = new ArrayList<>();
             for (Integer id : ids) {
                 if (id == null) {
                     continue;
                 }
-                // $[*] ? (@ == <id>) : any element of the array equals id
-                String path = "$[*] ? (@ == " + id + ")";
-                orPreds.add(
-                        cb.isTrue(
-                                cb.function(
-                                        "jsonb_path_exists",
-                                        Boolean.class,
-                                        root.get(field),
-                                        cb.literal(path)
-                                )
-                        )
-                );
+                preds.add(cb.isTrue(idInJsonArray(root, cb, field, id)));
             }
-            return cb.or(orPreds.toArray(Predicate[]::new));
+            Predicate[] arr = preds.toArray(Predicate[]::new);
+            // ALL selected ids present (AND) vs ANY present (OR).
+            return matchAll ? cb.and(arr) : cb.or(arr);
         });
+    }
+
+    /** jsonb_path_exists(<field>, '$[*] ? (@ == id)') — true when the array has id. */
+    private static jakarta.persistence.criteria.Expression<Boolean> idInJsonArray(
+            jakarta.persistence.criteria.Root<Profile> root,
+            jakarta.persistence.criteria.CriteriaBuilder cb,
+            String field,
+            int id) {
+        String path = "$[*] ? (@ == " + id + ")";
+        return cb.function(
+                "jsonb_path_exists",
+                Boolean.class,
+                root.get(field),
+                cb.literal(path));
+    }
+
+    /** True when the caller asked to sort by "relevance". */
+    private static boolean isRelevanceSort(Pageable pageable) {
+        if (pageable == null || pageable.getSort().isUnsorted()) {
+            return false;
+        }
+        for (Sort.Order o : pageable.getSort()) {
+            if ("relevant".equalsIgnoreCase(o.getProperty()) || "relevance".equalsIgnoreCase(o.getProperty())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Relevance score = number of the selected profession ids present on the
+     * profile's `title` array. Built as SUM(CASE WHEN id-present THEN 1 ELSE 0).
+     */
+    private static jakarta.persistence.criteria.Expression<Integer> relevanceScore(
+            jakarta.persistence.criteria.Root<Profile> root,
+            jakarta.persistence.criteria.CriteriaQuery<?> cq,
+            jakarta.persistence.criteria.CriteriaBuilder cb,
+            List<Integer> ids) {
+
+        jakarta.persistence.criteria.Expression<Integer> sum = null;
+        for (Integer id : ids) {
+            if (id == null) {
+                continue;
+            }
+            var present = cb.<Integer>selectCase()
+                    .when(cb.isTrue(idInJsonArray(root, cb, "title", id)), cb.literal(1))
+                    .otherwise(cb.literal(0));
+            sum = (sum == null) ? present : cb.sum(sum, present);
+        }
+        return sum;
     }
 }

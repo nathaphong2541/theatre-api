@@ -48,6 +48,8 @@ public record ProfileRequest(
         String partnerOtherText,
         List<Integer> experience,
         String experienceOtherText,
+        List<Integer> specialSkills,
+        String specialSkillsOtherText,
         List<Integer> unions,
         String unionOtherText,
         String unionStudentAcademicText,
@@ -56,6 +58,8 @@ public record ProfileRequest(
         List<Integer> races,
         String racialIdentityOtherText,
         List<Integer> additionals,
-        List<ProfileCredit> credits) {
+        List<ProfileCredit> credits,
+        // Per-section public visibility, e.g. {"about": true, "email": false}.
+        java.util.Map<String, Boolean> publicVisibility) {
 
 }

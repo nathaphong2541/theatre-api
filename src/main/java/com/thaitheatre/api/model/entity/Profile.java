@@ -135,6 +135,20 @@ public class Profile {
     private List<Integer> experience;
 
     @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "special_skills", columnDefinition = "jsonb not null default '[]'::jsonb")
+    private List<Integer> specialSkills;
+
+    /**
+     * Per-section public visibility toggles, e.g. {"about": true, "email": false}.
+     * Absent/false means that section is NOT shown on the public profile or in
+     * the public API. Default is empty = everything private until the member
+     * opts in. The login email is never keyed here (it is never public).
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "public_visibility", columnDefinition = "jsonb not null default '{}'::jsonb")
+    private Map<String, Boolean> publicVisibility;
+
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "partners", columnDefinition = "jsonb not null default '[]'::jsonb")
     private List<Integer> partners;
 
@@ -150,6 +164,9 @@ public class Profile {
 
     @Column(name = "experience_other_text", length = 200)
     private String experienceOtherText;
+
+    @Column(name = "special_skills_other_text", length = 200)
+    private String specialSkillsOtherText;
 
     @Column(name = "union_other_text", length = 200)
     private String unionOtherText;
@@ -234,6 +251,12 @@ public class Profile {
         }
         if (experience == null) {
             experience = List.of();
+        }
+        if (specialSkills == null) {
+            specialSkills = List.of();
+        }
+        if (publicVisibility == null) {
+            publicVisibility = Map.of();
         }
         if (partners == null) {
             partners = List.of();

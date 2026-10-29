@@ -37,6 +37,8 @@ public record ProfileResponse(
         String partnerOtherText,
         List<Integer> experience,
         String experienceOtherText,
+        List<Integer> specialSkills,
+        String specialSkillsOtherText,
         List<Integer> unions,
         String unionOtherText,
         String unionStudentAcademicText,
@@ -51,7 +53,10 @@ public record ProfileResponse(
         String avatarUrl,
         String resumeUrl,
         List<String> performanceUrls,
-        List<ProfilePerformanceItem> performanceItems
+        List<ProfilePerformanceItem> performanceItems,
+        // Per-section public visibility (owner view / edit form). On the public
+        // API this reflects what was actually exposed.
+        Map<String, Boolean> publicVisibility
         ) {
 
 }

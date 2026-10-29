@@ -94,7 +94,7 @@ public class FileStorageService {
 
     // allowed: JPG, PNG, GIF, WEBP (performance)
     public String savePerformanceImage(MultipartFile file) throws IOException {
-        validateFileSize(file, 10 * 1024 * 1024L); // จะลดเหลือ 2MB ก็ได้
+        validateFileSize(file, 50 * 1024 * 1024L);
         validateExtension(file, List.of("jpg", "jpeg", "png", "gif", "webp"));
 
         String newName = generateFileName(file.getOriginalFilename());

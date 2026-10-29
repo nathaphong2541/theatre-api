@@ -64,12 +64,14 @@ public class ProfileService {
             p.setWorkLocations(List.of());
             p.setUnions(List.of());
             p.setExperience(List.of());
+            p.setSpecialSkills(List.of());
             p.setPartners(List.of());
             p.setGenders(List.of());
             p.setRaces(List.of());
             p.setAdditionals(List.of());
             p.setCredits(List.of());
             p.setPartnerDetailById(Map.of());
+            p.setPublicVisibility(Map.of());
             return p;
         });
 
@@ -105,6 +107,7 @@ public class ProfileService {
             profile.setWorkLocations(nvl(req.workLocations()));
             profile.setUnions(nvl(req.unions()));
             profile.setExperience(nvl(req.experience()));
+            profile.setSpecialSkills(nvl(req.specialSkills()));
             profile.setPartners(nvl(req.partners()));
             profile.setGenders(nvl(req.genders()));
             profile.setRaces(nvl(req.races()));
@@ -117,11 +120,15 @@ public class ProfileService {
             profile.setGenderSelfDescribeText(trimToNull(req.genderSelfDescribeText()));
             profile.setPartnerOtherText(trimToNull(req.partnerOtherText()));
             profile.setExperienceOtherText(trimToNull(req.experienceOtherText()));
+            profile.setSpecialSkillsOtherText(trimToNull(req.specialSkillsOtherText()));
             profile.setUnionOtherText(trimToNull(req.unionOtherText()));
             profile.setUnionStudentAcademicText(trimToNull(req.unionStudentAcademicText()));
 
             // map
             profile.setPartnerDetailById(req.partnerDetailById() == null ? Map.of() : req.partnerDetailById());
+
+            // per-section public visibility toggles (default empty = all private)
+            profile.setPublicVisibility(req.publicVisibility() == null ? Map.of() : req.publicVisibility());
 
             // ✅ validate + cleanup
             applyExtraTexts(profile, req);
@@ -237,6 +244,17 @@ public class ProfileService {
             }
         } else {
             profile.setExperienceOtherText(null);
+        }
+
+        // specialSkills -> other
+        if (contains(profile.getSpecialSkills(), OTHER_ID)) {
+            if (profile.getSpecialSkillsOtherText() == null) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "specialSkillsOtherText is required when specialSkills contains " + OTHER_ID);
+            }
+        } else {
+            profile.setSpecialSkillsOtherText(null);
         }
 
         // unions -> other
@@ -435,6 +453,8 @@ public class ProfileService {
                 p.getPartnerOtherText(),
                 nvl(p.getExperience()),
                 p.getExperienceOtherText(),
+                nvl(p.getSpecialSkills()),
+                p.getSpecialSkillsOtherText(),
                 nvl(p.getUnions()),
                 p.getUnionOtherText(),
                 p.getUnionStudentAcademicText(),
@@ -449,7 +469,126 @@ public class ProfileService {
                 avatarUrl,
                 resumeUrl,
                 performanceUrls,
-                performanceItems
+                performanceItems,
+                p.getPublicVisibility() == null ? Map.of() : p.getPublicVisibility()
+        );
+    }
+
+    // -------------------- PUBLIC response (visibility-filtered) --------------------
+
+    /** True when the member opted a section into public view. Default: hidden. */
+    private static boolean vis(Profile p, String key) {
+        var m = p.getPublicVisibility();
+        return m != null && Boolean.TRUE.equals(m.get(key));
+    }
+
+    /**
+     * Response for ANONYMOUS / other-user callers (directory list + public
+     * profile). Only sections the member explicitly toggled public are filled;
+     * everything else is blanked. The login email (users.email) is never here —
+     * only the separate contact email (profiles.email), and only if toggled on.
+     *
+     * gender/identity, phone, etc. are each gated by their own toggle, so no
+     * personal data leaks unless the member chose to show it.
+     */
+    public ProfileResponse toPublicResponse(Profile p) {
+        String avatarUrl = null;
+        if (p.getAvatarFilename() != null && !p.getAvatarFilename().isBlank()) {
+            avatarUrl = buildUrl(p.getAvatarFilename());
+        }
+
+        boolean showResume = vis(p, "resume");
+        String resumeUrl = null;
+        if (showResume && p.getResumeFilename() != null && !p.getResumeFilename().isBlank()) {
+            resumeUrl = buildUrl("resume/" + p.getResumeFilename());
+        }
+
+        boolean showMedia = vis(p, "media");
+        var perfs = showMedia
+                ? p.getPerformances().stream()
+                        .sorted(Comparator.comparing(ProfilePerformance::getSortOrder,
+                                Comparator.nullsLast(Integer::compareTo)))
+                        .toList()
+                : java.util.List.<ProfilePerformance>of();
+        List<String> performanceUrls = perfs.stream()
+                .map(perf -> buildUrl("performance/" + perf.getFilename()))
+                .toList();
+        List<ProfilePerformanceItem> performanceItems = perfs.stream()
+                .map(perf -> new ProfilePerformanceItem(perf.getId(),
+                        buildUrl("performance/" + perf.getFilename()), perf.getSortOrder()))
+                .toList();
+
+        boolean showProfession = vis(p, "profession");
+        boolean showAbout = vis(p, "about");
+        boolean showContact = vis(p, "email");
+        boolean showPhone = vis(p, "phone");
+        boolean showWebsite = vis(p, "website");
+        boolean showSocial = vis(p, "social");
+        boolean showEducation = vis(p, "education");
+        boolean showWorkLoc = vis(p, "workLocations");
+        boolean showPartners = vis(p, "partners");
+        boolean showExperience = vis(p, "experience");
+        boolean showSpecialSkills = vis(p, "specialSkills");
+        boolean showUnions = vis(p, "unions");
+        boolean showGenders = vis(p, "genders");
+        boolean showRaces = vis(p, "races");
+        boolean showLanguages = vis(p, "languages");
+        boolean showCredits = vis(p, "credits");
+
+        return new ProfileResponse(
+                p.getId(),
+                p.getUserId(),
+                p.isPrivateProfile(),
+                p.isProfileIsCompany(),
+                // Name + avatar stay visible (they identify the public card).
+                p.getFirstName(),
+                p.getLastName(),
+                p.getPronouns(),
+                showProfession ? nvl(p.getTitle()) : List.of(),
+                showProfession ? p.getTitleOtherText() : null,
+                p.getLocation(),
+                // Contact email: the profile's own contact email, ONLY if toggled.
+                // NEVER the login email (that lives on UserAccount, not here).
+                showContact ? p.getEmail() : null,
+                showPhone ? p.getPhone() : null,
+                showWebsite ? p.getWebsite() : null,
+                showSocial ? p.getLinkedin() : null,
+                showSocial ? p.getFacebook() : null,
+                showSocial ? p.getInstagram() : null,
+                showSocial ? p.getTwitter() : null,
+                p.isMultiLang(),
+                showLanguages ? nvlStr(p.getAdditionalLanguages()) : List.of(),
+                p.getTravel(),
+                p.getTour(),
+                showAbout ? p.getAbout() : null,
+                showEducation ? p.getEducation() : null,
+                showMedia ? p.getVideo1() : null,
+                showMedia ? p.getVideo2() : null,
+                showWorkLoc ? nvl(p.getWorkLocations()) : List.of(),
+                showWorkLoc ? p.getWorklocaltionsOtherText() : null,
+                showPartners ? nvl(p.getPartners()) : List.of(),
+                showPartners ? (p.getPartnerDetailById() == null ? Map.of() : p.getPartnerDetailById()) : Map.of(),
+                showPartners ? p.getPartnerOtherText() : null,
+                showExperience ? nvl(p.getExperience()) : List.of(),
+                showExperience ? p.getExperienceOtherText() : null,
+                showSpecialSkills ? nvl(p.getSpecialSkills()) : List.of(),
+                showSpecialSkills ? p.getSpecialSkillsOtherText() : null,
+                showUnions ? nvl(p.getUnions()) : List.of(),
+                showUnions ? p.getUnionOtherText() : null,
+                showUnions ? p.getUnionStudentAcademicText() : null,
+                showGenders ? nvl(p.getGenders()) : List.of(),
+                showGenders ? p.getGenderSelfDescribeText() : null,
+                showRaces ? nvl(p.getRaces()) : List.of(),
+                showRaces ? p.getRacialIdentityOtherText() : null,
+                nvl(p.getAdditionals()),
+                showCredits ? nvl(p.getCredits()) : List.of(),
+                p.getCreatedAt(),
+                p.getUpdatedAt(),
+                avatarUrl,
+                resumeUrl,
+                performanceUrls,
+                performanceItems,
+                p.getPublicVisibility() == null ? Map.of() : p.getPublicVisibility()
         );
     }
 
@@ -500,11 +639,13 @@ public class ProfileService {
         // Privacy gate: a private profile is only viewable by its owner.
         // For anyone else (anonymous or a different user) we return 404 so we
         // don't leak the existence of the profile.
-        if (profile.isPrivateProfile() && !isCurrentUser(userId)) {
+        boolean owner = isCurrentUser(userId);
+        if (profile.isPrivateProfile() && !owner) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Profile not found");
         }
 
-        return toResponse(profile);
+        // Owner sees everything; anyone else sees only the sections they made public.
+        return owner ? toResponse(profile) : toPublicResponse(profile);
     }
 
     /** True when the authenticated caller owns the given profile userId. */
