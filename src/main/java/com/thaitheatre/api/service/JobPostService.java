@@ -41,23 +41,10 @@ public class JobPostService {
     @Value("${app.files.public-base-url}")
     private String publicBaseUrl; // e.g. /files/profile
 
-    // ------------------------- organization (owner) -------------------------
-
-    /** Guard: only organization-type profiles may create/manage job posts. */
-    private void requireOrganization(Long userId) {
-        var profile = profileRepo.findByUserId(userId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN,
-                        "Only organization profiles can post jobs"));
-        if (!profile.isProfileIsCompany()) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                    "Only organization profiles can post jobs");
-        }
-    }
+    // ------------------------- owner -------------------------
 
     @Transactional
     public JobPostResponse create(JobPostCreateRequest req, MultipartFile image, Long userId) {
-        requireOrganization(userId);
-
         JobPost p = new JobPost();
         p.setCreatedBy(userId);
         apply(p, req);
@@ -75,7 +62,6 @@ public class JobPostService {
 
     @Transactional
     public JobPostResponse update(Long id, JobPostCreateRequest req, MultipartFile image, Long userId) {
-        requireOrganization(userId);
         JobPost p = repo.findByIdAndCreatedBy(id, userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Job post not found"));
 
