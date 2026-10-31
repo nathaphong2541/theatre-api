@@ -92,6 +92,31 @@ public class FileStorageService {
         return newName;
     }
 
+    // allowed: JPG, PNG, GIF, WEBP (job-post promo image)
+    // Stored under <profileDir>/jobpost so it's served by the same /files/profile host.
+    public String saveJobPostImage(MultipartFile file, String oldFilename) throws IOException {
+        validateFileSize(file, 50 * 1024 * 1024L);
+        validateExtension(file, List.of("jpg", "jpeg", "png", "gif", "webp"));
+
+        String orig = file.getOriginalFilename();
+        if (orig == null || orig.isBlank()) {
+            orig = "jobpost.jpg";
+        }
+        String newName = generateFileName(orig);
+
+        Path dir = Paths.get(profileDir, "jobpost");
+        Files.createDirectories(dir);
+        file.transferTo(dir.resolve(newName));
+
+        if (oldFilename != null && !oldFilename.isBlank()) {
+            try {
+                Files.deleteIfExists(dir.resolve(oldFilename));
+            } catch (Exception ignored) {
+            }
+        }
+        return newName;
+    }
+
     // allowed: JPG, PNG, GIF, WEBP (performance)
     public String savePerformanceImage(MultipartFile file) throws IOException {
         validateFileSize(file, 50 * 1024 * 1024L);

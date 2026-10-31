@@ -84,6 +84,8 @@ public class SecurityConfig {
                         "/api/public/work-locations"
                 ).permitAll()
                 .requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**").permitAll()
+                // ✅ admin-only endpoints (job-post moderation, etc.)
+                .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 .anyRequest().authenticated()
                 )
                 .httpBasic(httpBasic -> httpBasic.disable())

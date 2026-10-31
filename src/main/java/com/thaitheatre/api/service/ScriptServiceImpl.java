@@ -9,12 +9,17 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.thaitheatre.api.model.dto.script.ScriptCreateRequest;
 import com.thaitheatre.api.model.dto.script.ScriptImageResponse;
 import com.thaitheatre.api.model.dto.script.ScriptResponse;
+import com.thaitheatre.api.model.dto.script.ScriptReviewRequest;
 import com.thaitheatre.api.model.dto.script.ScriptUpdateRequest;
 import com.thaitheatre.api.model.entity.Profile;
 import com.thaitheatre.api.model.entity.Script;
@@ -29,8 +34,13 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class ScriptServiceImpl implements ScriptService {
 
+    public static final String STATUS_PENDING = "PENDING";
+    public static final String STATUS_APPROVED = "APPROVED";
+    public static final String STATUS_REJECTED = "REJECTED";
+
     private final ScriptRepository scriptRepository;
     private final ScriptImageRepository scriptImageRepository;
+    private final ModerationNotifier notifier;
 
     @Value("${upload.script.dir}")
     private String uploadDir;
@@ -60,6 +70,8 @@ public class ScriptServiceImpl implements ScriptService {
         script.setCopyrightOwner(request.getCopyrightOwner());
         script.setCreatedBy(currentUserId);
         script.setUpdatedBy(currentUserId);
+        // New scripts await admin review before appearing in the public library.
+        script.setStatus(STATUS_PENDING);
 
         script = scriptRepository.save(script);
 
@@ -87,7 +99,10 @@ public class ScriptServiceImpl implements ScriptService {
         // ❗ใช้ getImages().addAll แทน setImages เพื่อไม่เปลี่ยน reference
         script.getImages().addAll(imageEntities);
 
-        return mapToResponse(scriptRepository.save(script));
+        Script saved = scriptRepository.save(script);
+        notifier.onSubmitted(ModerationNotifier.ENTITY_SCRIPT, saved.getId(), saved.getTitle(),
+                saved.getCreatedBy(), false);
+        return mapToResponse(saved);
     }
 
     @Override
@@ -128,6 +143,9 @@ public class ScriptServiceImpl implements ScriptService {
         script.setCategory(normalizeCategory(request.getCategory()));
         script.setCopyrightOwner(request.getCopyrightOwner());
         script.setUpdatedBy(currentUserId);
+        // Any edit changes the content, so send the script back for review.
+        script.setStatus(STATUS_PENDING);
+        script.setReviewNote(null);
 
         // ✅ ถ้ามี PDF ใหม่ → ลบไฟล์เก่า + เซฟใหม่ + เพิ่ม version ใหม่
         if (pdfFile != null && !pdfFile.isEmpty()) {
@@ -157,7 +175,10 @@ public class ScriptServiceImpl implements ScriptService {
             script.getImages().addAll(newImages);
         }
 
-        return mapToResponse(scriptRepository.save(script));
+        Script saved = scriptRepository.save(script);
+        notifier.onSubmitted(ModerationNotifier.ENTITY_SCRIPT, saved.getId(), saved.getTitle(),
+                saved.getCreatedBy(), true);
+        return mapToResponse(saved);
     }
 
     // ───────────── helper สำหรับ PDF ─────────────
@@ -371,6 +392,8 @@ public class ScriptServiceImpl implements ScriptService {
                 .copyrightOwner(script.getCopyrightOwner())
                 .images(imageResponses)
                 .pdfPath(toScriptPdfUrl(script.getPdfPath()))
+                .status(script.getStatus())
+                .reviewNote(script.getReviewNote())
                 .createdAt(script.getCreatedAt())
                 .createdBy(script.getCreatedBy())
                 .createdByName(createdByName) // 👈 อันนี้ไว้โชว์ชื่อบน frontend
@@ -392,6 +415,61 @@ public class ScriptServiceImpl implements ScriptService {
         Script script = scriptRepository.findByIdAndCreatedBy(scriptId, userId)
                 .orElseThrow(() -> new RuntimeException("Script not found or you have no permission"));
         return mapToResponse(script);
+    }
+
+    // ───────────────── public (Play Library) ─────────────────
+
+    @Override
+    public List<ScriptResponse> getPublicScripts() {
+        // Only approved scripts are visible to the public.
+        return scriptRepository.findByStatusOrderByCreatedAtDesc(STATUS_APPROVED)
+                .stream()
+                .map(this::mapToResponse)
+                .toList();
+    }
+
+    @Override
+    public ScriptResponse getPublicScript(Long id) {
+        Script script = scriptRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Script not found"));
+        if (!STATUS_APPROVED.equals(script.getStatus())) {
+            // Not yet approved (or rejected) → not public.
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Script not found");
+        }
+        return mapToResponse(script);
+    }
+
+    // ───────────────── admin moderation ─────────────────
+
+    @Override
+    public Page<ScriptResponse> listForAdmin(String status, int page, int size) {
+        var pageable = PageRequest.of(page, size);
+        var result = (status == null || status.isBlank())
+                ? scriptRepository.findAllByOrderByCreatedAtDesc(pageable)
+                : scriptRepository.findByStatusOrderByCreatedAtDesc(status.trim().toUpperCase(), pageable);
+        return result.map(this::mapToResponse);
+    }
+
+    @Override
+    public ScriptResponse review(Long id, ScriptReviewRequest req, Long adminId, String adminEmail) {
+        Script script = scriptRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Script not found"));
+        String status = req.getStatus() == null ? "" : req.getStatus().trim().toUpperCase();
+        if (!STATUS_APPROVED.equals(status) && !STATUS_REJECTED.equals(status)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "status must be APPROVED or REJECTED");
+        }
+        script.setStatus(status);
+        script.setReviewNote(req.getReviewNote());
+        Script saved = scriptRepository.save(script);
+
+        if (STATUS_APPROVED.equals(status)) {
+            notifier.onApproved(ModerationNotifier.ENTITY_SCRIPT, saved.getId(), saved.getTitle(),
+                    saved.getCreatedBy(), adminId, adminEmail);
+        } else {
+            notifier.onRejected(ModerationNotifier.ENTITY_SCRIPT, saved.getId(), saved.getTitle(),
+                    saved.getCreatedBy(), adminId, adminEmail, saved.getReviewNote());
+        }
+        return mapToResponse(saved);
     }
 
     private String toScriptUrl(String fullPath) {

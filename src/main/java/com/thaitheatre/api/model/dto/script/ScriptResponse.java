@@ -24,6 +24,9 @@ public class ScriptResponse {
 
     private String pdfPath;   // หรือ pdfUrl ถ้าคุณ mapping เป็น URL เวลาแสดง
 
+    private String status;       // PENDING / APPROVED / REJECTED
+    private String reviewNote;   // เหตุผลเมื่อไม่อนุมัติ (แสดงให้เจ้าของเห็น)
+
     private String createdByName; // ใหม่
     private LocalDateTime createdAt;
     private Long createdBy;

@@ -42,12 +42,15 @@ public class ProfileQueryService {
                 && isRelevanceSort(pageable)
                 && !rankIds.isEmpty();
 
-        // default pageable
+        // "relevant" is a virtual sort token, NOT a real entity property — if it
+        // ever reaches Spring Data it throws (PropertyReferenceException → 500).
+        // So whenever the sort mentions it, strip it here: use manual relevance
+        // ordering when we actually have ids to rank by, otherwise fall back to
+        // newest-first. Also default an unsorted/absent pageable to newest-first.
+        final boolean askedRelevance = isRelevanceSort(pageable);
         if (pageable == null) {
             pageable = PageRequest.of(0, 20, Sort.by(Sort.Direction.DESC, "updatedAt"));
-        } else if (pageable.getSort().isUnsorted() || sortByRelevance) {
-            // Relevance ordering is applied manually via cq.orderBy below, so strip
-            // any Spring sort (the "relevant" token isn't a real entity property).
+        } else if (pageable.getSort().isUnsorted() || askedRelevance) {
             pageable = PageRequest.of(
                     pageable.getPageNumber(),
                     pageable.getPageSize(),

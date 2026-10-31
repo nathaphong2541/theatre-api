@@ -17,6 +17,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
+import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -73,6 +74,15 @@ public class Script {
     @Column(name = "pdf_path", length = 500)
     private String pdfPath;
 
+    // สถานะการตรวจสอบของแอดมิน: PENDING (รอตรวจ) / APPROVED (อนุมัติ) / REJECTED (ไม่อนุมัติ)
+    // บทที่ยังไม่อนุมัติจะไม่ขึ้นในห้องสมุดสาธารณะ
+    @Column(nullable = false, length = 20)
+    private String status;
+
+    // เหตุผลเมื่อแอดมินไม่อนุมัติ (แสดงให้เจ้าของเห็น)
+    @Column(name = "review_note", length = 500)
+    private String reviewNote;
+
     // audit fields
     @CreationTimestamp
     @Column(updatable = false)
@@ -96,6 +106,13 @@ public class Script {
     private LocalDateTime updatedAt;
 
     private Long updatedBy;   // user id ผู้แก้ไขล่าสุด
+
+    @PrePersist
+    void prePersist() {
+        if (status == null) {
+            status = "PENDING";
+        }
+    }
 
     // ───────── helper methods (สำคัญ เวลา add/remove) ─────────
     public void addImage(ScriptImage image) {

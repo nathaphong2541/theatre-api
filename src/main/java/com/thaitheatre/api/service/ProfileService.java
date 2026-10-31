@@ -476,10 +476,15 @@ public class ProfileService {
 
     // -------------------- PUBLIC response (visibility-filtered) --------------------
 
-    /** True when the member opted a section into public view. Default: hidden. */
+    /**
+     * Whether a section is shown publicly. Default is SHOWN: a section is only
+     * hidden when the member explicitly turned its toggle off (value == false).
+     * Absent/true => shown. This keeps existing profiles (which have no saved
+     * toggles yet) fully visible until the owner opts a section out.
+     */
     private static boolean vis(Profile p, String key) {
         var m = p.getPublicVisibility();
-        return m != null && Boolean.TRUE.equals(m.get(key));
+        return m == null || !Boolean.FALSE.equals(m.get(key));
     }
 
     /**

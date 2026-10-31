@@ -126,6 +126,110 @@ public class MailService {
         sendHtml(oldEmail, subject, text, buildBrandedHtml("เปลี่ยนอีเมล", body, "#147B7E"));
     }
 
+    // ---------- moderation notifications ----------
+
+    /**
+     * Notify an admin that a new item is waiting for review.
+     * @param itemKind "ประกาศหาคนทำงาน" or "บทละคร"
+     */
+    public void sendModerationSubmitted(String toAdminEmail, String itemKind, String title, String ownerName) {
+        String subject = "🔔 มี" + itemKind + "รอการตรวจสอบ · THAI ART HUB";
+        String text = """
+                มี%sใหม่รอการตรวจสอบในระบบ THAI ART HUB
+
+                หัวข้อ: %s
+                ผู้ส่ง: %s
+
+                กรุณาเข้าสู่ระบบด้วยบัญชีผู้ดูแลเพื่อตรวจสอบและอนุมัติ/ปฏิเสธ
+
+                — THAI ART HUB
+                """.formatted(itemKind, nz(title), nz(ownerName));
+
+        String body = """
+                <h1 style="margin:0 0 8px;font-size:22px;color:#15302b;">มี%sรอตรวจสอบ</h1>
+                <p style="margin:0 0 14px;font-size:14px;line-height:1.8;color:#4a5a55;">
+                  มี%sใหม่ถูกส่งเข้ามาและกำลังรอการพิจารณา
+                </p>
+                <div style="margin:0 0 16px;padding:12px 14px;border-radius:12px;background:#f0f6f1;">
+                  <div style="font-size:10px;font-weight:800;letter-spacing:1px;color:#5b817c;text-transform:uppercase;">หัวข้อ</div>
+                  <div style="font-size:15px;font-weight:700;color:#15302b;margin-top:2px;">%s</div>
+                  <div style="font-size:12px;color:#5b817c;margin-top:8px;">ผู้ส่ง: %s</div>
+                </div>
+                <p style="margin:0;font-size:13px;line-height:1.8;color:#4a5a55;">
+                  กรุณาเข้าสู่ระบบด้วยบัญชีผู้ดูแลเพื่อตรวจสอบและอนุมัติหรือปฏิเสธ
+                </p>
+                """.formatted(itemKind, itemKind, nz(title), nz(ownerName));
+
+        sendHtml(toAdminEmail, subject, text, buildBrandedHtml("รอตรวจสอบ", body, "#147B7E"));
+    }
+
+    /** Notify the owner that their item was approved and is now public. */
+    public void sendModerationApproved(String toOwnerEmail, String ownerName, String itemKind, String title) {
+        String name = safeName(ownerName);
+        String subject = "✅ " + itemKind + "ของคุณได้รับการอนุมัติ · THAI ART HUB";
+        String text = """
+                สวัสดีคุณ %s,
+
+                %sของคุณ "%s" ได้รับการอนุมัติเรียบร้อยแล้ว
+                และกำลังแสดงอยู่บนเว็บไซต์ THAI ART HUB
+
+                — THAI ART HUB
+                """.formatted(name, itemKind, nz(title));
+
+        String body = """
+                <h1 style="margin:0 0 8px;font-size:22px;color:#1b7a44;">อนุมัติแล้ว ✅</h1>
+                <p style="margin:0 0 14px;font-size:14px;line-height:1.8;color:#4a5a55;">
+                  สวัสดีคุณ <strong style="color:#15302b;">%s</strong>,<br>
+                  %sของคุณได้รับการอนุมัติเรียบร้อยแล้ว และกำลังแสดงอยู่บนเว็บไซต์
+                </p>
+                <div style="margin:0;padding:12px 14px;border-radius:12px;background:#e9f6ef;border:1px solid #bfe3cf;">
+                  <div style="font-size:10px;font-weight:800;letter-spacing:1px;color:#1b7a44;text-transform:uppercase;">หัวข้อ</div>
+                  <div style="font-size:15px;font-weight:700;color:#15302b;margin-top:2px;">%s</div>
+                </div>
+                """.formatted(name, itemKind, nz(title));
+
+        sendHtml(toOwnerEmail, subject, text, buildBrandedHtml("อนุมัติแล้ว", body, "#1b7a44"));
+    }
+
+    /** Notify the owner that their item was rejected, with the admin's reason. */
+    public void sendModerationRejected(String toOwnerEmail, String ownerName, String itemKind,
+            String title, String reason) {
+        String name = safeName(ownerName);
+        String subject = "❌ " + itemKind + "ของคุณไม่ได้รับการอนุมัติ · THAI ART HUB";
+        String reasonText = (reason == null || reason.isBlank()) ? "ไม่ได้ระบุเหตุผล" : reason;
+        String text = """
+                สวัสดีคุณ %s,
+
+                %sของคุณ "%s" ยังไม่ได้รับการอนุมัติ
+                เหตุผล: %s
+
+                คุณสามารถแก้ไขและส่งเข้ามาใหม่เพื่อให้ผู้ดูแลพิจารณาอีกครั้งได้
+
+                — THAI ART HUB
+                """.formatted(name, itemKind, nz(title), reasonText);
+
+        String body = """
+                <h1 style="margin:0 0 8px;font-size:22px;color:#c0392b;">ยังไม่อนุมัติ</h1>
+                <p style="margin:0 0 14px;font-size:14px;line-height:1.8;color:#4a5a55;">
+                  สวัสดีคุณ <strong style="color:#15302b;">%s</strong>,<br>
+                  %sของคุณ "<strong>%s</strong>" ยังไม่ได้รับการอนุมัติ
+                </p>
+                <div style="margin:0 0 16px;padding:12px 14px;border-radius:12px;background:#fdeaea;border:1px solid #efc4b8;">
+                  <div style="font-size:10px;font-weight:800;letter-spacing:1px;color:#c0392b;text-transform:uppercase;">เหตุผล</div>
+                  <div style="font-size:14px;color:#8f382c;margin-top:4px;line-height:1.7;">%s</div>
+                </div>
+                <p style="margin:0;font-size:13px;line-height:1.8;color:#4a5a55;">
+                  คุณสามารถแก้ไขและส่งเข้ามาใหม่เพื่อให้ผู้ดูแลพิจารณาอีกครั้งได้
+                </p>
+                """.formatted(name, itemKind, nz(title), reasonText);
+
+        sendHtml(toOwnerEmail, subject, text, buildBrandedHtml("ไม่อนุมัติ", body, "#c0392b"));
+    }
+
+    private String nz(String v) {
+        return v == null ? "" : v;
+    }
+
     // ---------- helpers ----------
 
     private String safeName(String fullName) {

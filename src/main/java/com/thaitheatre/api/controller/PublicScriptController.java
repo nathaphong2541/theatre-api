@@ -24,16 +24,18 @@ public class PublicScriptController {
      */
     @GetMapping
     public ResponseEntity<List<ScriptResponse>> getAllPublicScripts() {
-        List<ScriptResponse> list = scriptService.getAllScripts();
+        // Only admin-approved scripts appear in the public Play Library.
+        List<ScriptResponse> list = scriptService.getPublicScripts();
         return ResponseEntity.ok(list);
     }
 
     /**
      * ✅ GET ตาม id (Public) ตัวอย่าง: GET /api/public/scripts/2
+     * คืนเฉพาะบทที่อนุมัติแล้วเท่านั้น (บทที่ยังไม่อนุมัติจะได้ 404)
      */
     @GetMapping("/{id}")
     public ResponseEntity<ScriptResponse> getPublicScriptById(@PathVariable Long id) {
-        ScriptResponse res = scriptService.getScript(id);
+        ScriptResponse res = scriptService.getPublicScript(id);
         return ResponseEntity.ok(res);
     }
 }

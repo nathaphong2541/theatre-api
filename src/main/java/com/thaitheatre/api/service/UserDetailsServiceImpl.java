@@ -43,9 +43,10 @@ public class UserDetailsServiceImpl implements UserDetailsService {
             throw new UsernameNotFoundException("User not found");
         }
 
-        // ✅ ตอนนี้คุณ fix role เป็น USER อยู่
-        // ถ้าในอนาคตมี role จริงใน DB ค่อย map เพิ่ม
-        var authorities = List.of(new SimpleGrantedAuthority("ROLE_USER"));
+        // Map the real role from the DB so hasRole('ADMIN') works. Spring's
+        // hasRole adds the "ROLE_" prefix, so the authority must be ROLE_<ROLE>.
+        String roleName = u.getRole() != null ? u.getRole().name() : "USER";
+        var authorities = List.of(new SimpleGrantedAuthority("ROLE_" + roleName));
 
         return new CustomUserDetails(
                 u.getId(), // ✅ สำคัญ: userId เก็บตรงนี้
