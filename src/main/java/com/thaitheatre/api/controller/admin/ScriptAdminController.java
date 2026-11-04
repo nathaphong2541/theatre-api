@@ -2,6 +2,7 @@ package com.thaitheatre.api.controller.admin;
 
 import org.springframework.data.domain.Page;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -10,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.thaitheatre.api.model.dto.admin.AdminDeleteRequest;
 import com.thaitheatre.api.model.dto.script.ScriptResponse;
 import com.thaitheatre.api.model.dto.script.ScriptReviewRequest;
 import com.thaitheatre.api.security.HasUserId;
@@ -44,5 +46,14 @@ public class ScriptAdminController {
         Long adminId = (auth != null && auth.getPrincipal() instanceof HasUserId p) ? p.getId() : null;
         String adminEmail = auth != null ? auth.getName() : null;
         return service.review(id, req, adminId, adminEmail);
+    }
+
+    /** Admin deletes a script (reason recorded in the audit log). */
+    @DeleteMapping("/{id}")
+    public void delete(@PathVariable Long id, @RequestBody(required = false) AdminDeleteRequest req,
+            Authentication auth) {
+        Long adminId = (auth != null && auth.getPrincipal() instanceof HasUserId p) ? p.getId() : null;
+        String adminEmail = auth != null ? auth.getName() : null;
+        service.adminDelete(id, req != null ? req.getReason() : null, adminId, adminEmail);
     }
 }

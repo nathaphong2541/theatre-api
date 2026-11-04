@@ -54,4 +54,10 @@ public interface ScriptService {
 
         /** Admin approves or rejects a script. The acting admin is captured for the audit log. */
         ScriptResponse review(Long id, ScriptReviewRequest req, Long adminId, String adminEmail);
+
+        /** Admin deletes any script (not ownership-scoped); the action is logged. */
+        void adminDelete(Long id, String reason, Long adminId, String adminEmail);
+
+        /** Permanently delete every script owned by a user (incl. files). Used on account hard-delete. */
+        void deleteAllByOwner(Long userId);
 }

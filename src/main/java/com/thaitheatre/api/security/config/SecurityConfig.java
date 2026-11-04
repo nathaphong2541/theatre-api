@@ -86,6 +86,9 @@ public class SecurityConfig {
                 .requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**").permitAll()
                 // ✅ admin-only endpoints (job-post moderation, etc.)
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                // ✅ master-data management (create/update/delete lookup tables) is admin-only.
+                //    The public read side lives under /api/public/** (permitAll GET above).
+                .requestMatchers("/api/master/**").hasRole("ADMIN")
                 .anyRequest().authenticated()
                 )
                 .httpBasic(httpBasic -> httpBasic.disable())

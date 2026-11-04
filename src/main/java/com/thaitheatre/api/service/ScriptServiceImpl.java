@@ -41,6 +41,7 @@ public class ScriptServiceImpl implements ScriptService {
     private final ScriptRepository scriptRepository;
     private final ScriptImageRepository scriptImageRepository;
     private final ModerationNotifier notifier;
+    private final com.thaitheatre.api.repository.UserRepository userRepository;
 
     @Value("${upload.script.dir}")
     private String uploadDir;
@@ -279,6 +280,67 @@ public class ScriptServiceImpl implements ScriptService {
         scriptRepository.delete(script);
     }
 
+    @Override
+    public void adminDelete(Long id, String reason, Long adminId, String adminEmail) {
+        Script script = scriptRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Script not found"));
+
+        Long ownerId = script.getCreatedBy();
+        String title = script.getTitle();
+
+        // Remove stored files too (same cleanup as the owner delete).
+        if (script.getImages() != null) {
+            script.getImages().forEach(img -> {
+                try {
+                    Files.deleteIfExists(Path.of(img.getFilePath()));
+                } catch (IOException ignored) {
+                }
+            });
+        }
+        if (script.getPdfs() != null) {
+            script.getPdfs().forEach(pdf -> {
+                try {
+                    Files.deleteIfExists(Path.of(pdf.getFilePath()));
+                } catch (IOException ignored) {
+                }
+            });
+        }
+
+        scriptRepository.delete(script);
+        notifier.onDeleted(ModerationNotifier.ENTITY_SCRIPT, id, title, ownerId, adminId, adminEmail, reason);
+    }
+
+    @Override
+    public void deleteAllByOwner(Long userId) {
+        if (userId == null) {
+            return;
+        }
+        for (Script script : scriptRepository.findAllByCreatedBy(userId)) {
+            deleteScriptFiles(script);
+            scriptRepository.delete(script); // cascade removes script_images + script_pdfs
+        }
+    }
+
+    /** Remove a script's image + PDF files from disk (ignore missing). */
+    private void deleteScriptFiles(Script script) {
+        if (script.getImages() != null) {
+            script.getImages().forEach(img -> {
+                try {
+                    Files.deleteIfExists(Path.of(img.getFilePath()));
+                } catch (IOException ignored) {
+                }
+            });
+        }
+        if (script.getPdfs() != null) {
+            script.getPdfs().forEach(pdf -> {
+                try {
+                    Files.deleteIfExists(Path.of(pdf.getFilePath()));
+                } catch (IOException ignored) {
+                }
+            });
+        }
+    }
+
     // ───────────────── helper ─────────────────
     private List<ScriptImage> saveImages(Script script, List<MultipartFile> images) {
         List<ScriptImage> result = new ArrayList<>();
@@ -421,8 +483,8 @@ public class ScriptServiceImpl implements ScriptService {
 
     @Override
     public List<ScriptResponse> getPublicScripts() {
-        // Only approved scripts are visible to the public.
-        return scriptRepository.findByStatusOrderByCreatedAtDesc(STATUS_APPROVED)
+        // Only approved scripts whose owner is still an active user.
+        return scriptRepository.findPublicByStatus(STATUS_APPROVED)
                 .stream()
                 .map(this::mapToResponse)
                 .toList();
@@ -432,11 +494,17 @@ public class ScriptServiceImpl implements ScriptService {
     public ScriptResponse getPublicScript(Long id) {
         Script script = scriptRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Script not found"));
-        if (!STATUS_APPROVED.equals(script.getStatus())) {
-            // Not yet approved (or rejected) → not public.
+        if (!STATUS_APPROVED.equals(script.getStatus()) || !ownerActive(script.getCreatedBy())) {
+            // Not approved, or the owner's account was deleted/disabled → not public.
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Script not found");
         }
         return mapToResponse(script);
+    }
+
+    /** True when the content owner is still an active (not deleted/disabled) user. */
+    private boolean ownerActive(Long userId) {
+        return userId != null && userRepository.existsByIdAndDelFlagAndRecordStatus(
+                userId, com.thaitheatre.api.common.DelFlag.N, com.thaitheatre.api.common.RecordStatus.A);
     }
 
     // ───────────────── admin moderation ─────────────────

@@ -71,7 +71,8 @@ public class AuthService {
         }
 
         return new UserProfileDTO(
-                u.getId(), u.getFirstName(), u.getLastName(), u.getEmail(), u.getPolicyConfirmed());
+                u.getId(), u.getFirstName(), u.getLastName(), u.getEmail(), u.getPolicyConfirmed(),
+                u.getRole() == null ? UserRole.USER.name() : u.getRole().name());
     }
 
     public AuthResponse login(LoginRequest rq) {
@@ -118,7 +119,8 @@ public class AuthService {
                         user.getFirstName(),
                         user.getLastName(),
                         user.getEmail(),
-                        user.getPolicyConfirmed()));
+                        user.getPolicyConfirmed(),
+                        user.getRole() == null ? UserRole.USER.name() : user.getRole().name()));
     }
 
     public void deleteAccountByEmail(String email, String currentPassword) {
@@ -174,6 +176,7 @@ public class AuthService {
                 user.getFirstName(),
                 user.getLastName(),
                 user.getEmail(),
-                user.getPolicyConfirmed());
+                user.getPolicyConfirmed(),
+                user.getRole() == null ? UserRole.USER.name() : user.getRole().name());
     }
 }

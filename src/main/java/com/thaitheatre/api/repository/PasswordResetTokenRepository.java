@@ -27,4 +27,9 @@ public interface PasswordResetTokenRepository extends JpaRepository<PasswordRese
     @org.springframework.data.jpa.repository.Query(
             "update PasswordResetToken t set t.used = true where t.user = :user and t.used = false")
     int markAllUsedForUser(com.thaitheatre.api.model.entity.UserAccount user);
+
+    /** Remove all reset tokens for a user (used when hard-deleting the account). */
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.transaction.annotation.Transactional
+    void deleteByUser(UserAccount user);
 }

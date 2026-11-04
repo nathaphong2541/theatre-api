@@ -35,6 +35,7 @@ public class ModerationNotifier {
     public static final String ACTION_RESUBMITTED = "RESUBMITTED";
     public static final String ACTION_APPROVED = "APPROVED";
     public static final String ACTION_REJECTED = "REJECTED";
+    public static final String ACTION_DELETED = "DELETED";
 
     private final UserRepository userRepo;
     private final MailService mailService;
@@ -111,6 +112,18 @@ public class ModerationNotifier {
         auditLog.record(ACTION_REJECTED, entityType, entityId, title,
                 adminId, adminEmail, UserRole.ADMIN.name(), ownerId,
                 (reason == null || reason.isBlank()) ? "ปฏิเสธ (ไม่ระบุเหตุผล)" : "ปฏิเสธ: " + reason);
+    }
+
+    /**
+     * Admin deleted an item. Records who deleted it and why. Runs async so the
+     * delete request isn't slowed by the audit write.
+     */
+    @Async("mailExecutor")
+    public void onDeleted(String entityType, Long entityId, String title,
+            Long ownerId, Long adminId, String adminEmail, String reason) {
+        auditLog.record(ACTION_DELETED, entityType, entityId, title,
+                adminId, adminEmail, UserRole.ADMIN.name(), ownerId,
+                (reason == null || reason.isBlank()) ? "ลบโดยผู้ดูแล" : "ลบโดยผู้ดูแล — เหตุผล: " + reason);
     }
 
     // ---------- helpers ----------

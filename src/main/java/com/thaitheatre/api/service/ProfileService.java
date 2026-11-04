@@ -641,6 +641,17 @@ public class ProfileService {
         var profile = repo.findByUserId(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Profile not found"));
 
+        // Owner gate: a soft-deleted/disabled user, or an ADMIN account (staff,
+        // not talent), must not appear in the public directory.
+        var account = userRepo.findById(userId).orElse(null);
+        boolean visible = account != null
+                && account.getDelFlag() == com.thaitheatre.api.common.DelFlag.N
+                && account.getRecordStatus() == com.thaitheatre.api.common.RecordStatus.A
+                && account.getRole() != com.thaitheatre.api.model.enums.UserRole.ADMIN;
+        if (!visible) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Profile not found");
+        }
+
         // Privacy gate: a private profile is only viewable by its owner.
         // For anyone else (anonymous or a different user) we return 404 so we
         // don't leak the existence of the profile.
@@ -835,6 +846,46 @@ public class ProfileService {
             }
         }
         return toResponse(saved);
+    }
+
+    /**
+     * Permanently delete a user's profile and all its files (avatar, resume,
+     * performance images). Deleting the Profile entity cascades to the
+     * profile_performance rows. No-op if the user has no profile. Used when an
+     * admin hard-deletes an account.
+     */
+    @Transactional
+    public void hardDeleteByUser(Long userId) {
+        var opt = repo.findByUserId(userId);
+        if (opt.isEmpty()) {
+            return;
+        }
+        var profile = opt.get();
+
+        // avatar: <profileDir>/<avatarFilename>
+        deleteQuietly(profile.getAvatarFilename() == null ? null
+                : Paths.get(profileDir).resolve(profile.getAvatarFilename()));
+        // resume: <profileDir>/resume/<resumeFilename>
+        deleteQuietly(profile.getResumeFilename() == null ? null
+                : Paths.get(profileDir, "resume").resolve(profile.getResumeFilename()));
+        // performance images: <profileDir>/performance/<filename>
+        if (profile.getPerformances() != null) {
+            profile.getPerformances().forEach(perf -> deleteQuietly(
+                    perf.getFilename() == null ? null
+                            : Paths.get(profileDir, "performance").resolve(perf.getFilename())));
+        }
+
+        repo.delete(profile); // cascade removes profile_performance rows
+    }
+
+    private void deleteQuietly(Path path) {
+        if (path == null) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(path);
+        } catch (Exception ignored) {
+        }
     }
 
     private static List<String> cleanLanguages(List<String> langs) {

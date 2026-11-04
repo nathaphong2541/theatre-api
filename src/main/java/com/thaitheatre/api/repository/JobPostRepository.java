@@ -27,6 +27,10 @@ public interface JobPostRepository extends JpaRepository<JobPost, Long> {
             WHERE j.status = 'APPROVED' AND j.enabled = true
               AND (j.startDate IS NULL OR j.startDate <= :today)
               AND (j.endDate IS NULL OR j.endDate >= :today)
+              AND EXISTS (SELECT 1 FROM UserAccount u
+                          WHERE u.id = j.createdBy
+                            AND u.delFlag = com.thaitheatre.api.common.DelFlag.N
+                            AND u.recordStatus = com.thaitheatre.api.common.RecordStatus.A)
             ORDER BY j.createdAt DESC
             """)
     Page<JobPost> findPublic(@org.springframework.data.repository.query.Param("today") java.time.LocalDate today,

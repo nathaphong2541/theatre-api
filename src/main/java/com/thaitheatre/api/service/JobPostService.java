@@ -37,9 +37,13 @@ public class JobPostService {
     private final ProfileRepository profileRepo;
     private final FileStorageService fileStorage;
     private final ModerationNotifier notifier;
+    private final com.thaitheatre.api.repository.UserRepository userRepo;
 
     @Value("${app.files.public-base-url}")
     private String publicBaseUrl; // e.g. /files/profile
+
+    @Value("${app.files.profile-dir}")
+    private String profileDir; // disk dir where uploads (incl. jobpost/) live
 
     // ------------------------- owner -------------------------
 
@@ -85,6 +89,42 @@ public class JobPostService {
         repo.delete(p);
     }
 
+    /** Admin deletes any job post (not ownership-scoped) and the action is logged. */
+    @Transactional
+    public void adminDelete(Long id, String reason, Long adminId, String adminEmail) {
+        JobPost p = repo.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Job post not found"));
+        Long ownerId = p.getCreatedBy();
+        String title = p.getTitle();
+        deleteJobPostImage(p);
+        repo.delete(p);
+        notifier.onDeleted(ModerationNotifier.ENTITY_JOB_POST, id, title, ownerId, adminId, adminEmail, reason);
+    }
+
+    /** Permanently delete every job post owned by a user (incl. images). Used on account hard-delete. */
+    @Transactional
+    public void deleteAllByOwner(Long userId) {
+        if (userId == null) {
+            return;
+        }
+        for (JobPost p : repo.findByCreatedByOrderByCreatedAtDesc(userId)) {
+            deleteJobPostImage(p);
+            repo.delete(p);
+        }
+    }
+
+    /** Remove a job post's promo image from disk (ignore missing). */
+    private void deleteJobPostImage(JobPost p) {
+        String img = p.getImagePath();
+        if (img == null || img.isBlank()) {
+            return;
+        }
+        try {
+            java.nio.file.Files.deleteIfExists(java.nio.file.Paths.get(profileDir, "jobpost").resolve(img));
+        } catch (Exception ignored) {
+        }
+    }
+
     /** Owner toggles the post on/off (does not change approval status). */
     @Transactional
     public JobPostResponse setEnabled(Long id, boolean enabled, Long userId) {
@@ -119,7 +159,9 @@ public class JobPostService {
         var today = java.time.LocalDate.now();
         boolean inWindow = (p.getStartDate() == null || !p.getStartDate().isAfter(today))
                 && (p.getEndDate() == null || !p.getEndDate().isBefore(today));
-        if (!STATUS_APPROVED.equals(p.getStatus()) || !p.isEnabled() || !inWindow) {
+        boolean ownerActive = p.getCreatedBy() != null && userRepo.existsByIdAndDelFlagAndRecordStatus(
+                p.getCreatedBy(), com.thaitheatre.api.common.DelFlag.N, com.thaitheatre.api.common.RecordStatus.A);
+        if (!STATUS_APPROVED.equals(p.getStatus()) || !p.isEnabled() || !inWindow || !ownerActive) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Job post not found");
         }
         return toResponse(p);

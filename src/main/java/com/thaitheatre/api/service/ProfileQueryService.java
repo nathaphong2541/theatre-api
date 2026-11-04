@@ -111,6 +111,21 @@ public class ProfileQueryService {
         // marked private. This is enforced unconditionally and ignores any
         // client-supplied privateProfile value so callers cannot opt back in.
         spec = spec.and((root, cq, cb) -> cb.isFalse(root.get("privateProfile")));
+
+        // Owner gate: the directory lists only regular members. Hide profiles
+        // whose user account was soft-deleted/disabled, OR is an ADMIN account
+        // (admins are staff, not talent). Profile.userId = users.id, matched via
+        // a correlated EXISTS subquery.
+        spec = spec.and((root, cq, cb) -> {
+            var sub = cq.subquery(Long.class);
+            var u = sub.from(com.thaitheatre.api.model.entity.UserAccount.class);
+            sub.select(cb.literal(1L)).where(
+                    cb.equal(u.get("id"), root.get("userId")),
+                    cb.equal(u.get("delFlag"), com.thaitheatre.api.common.DelFlag.N),
+                    cb.equal(u.get("recordStatus"), com.thaitheatre.api.common.RecordStatus.A),
+                    cb.notEqual(u.get("role"), com.thaitheatre.api.model.enums.UserRole.ADMIN));
+            return cb.exists(sub);
+        });
         spec = andEq(spec, "profileIsCompany", rq.getProfileIsCompany());
         spec = andEq(spec, "multiLang", rq.getMultiLang());
         spec = andEq(spec, "travel", rq.getTravel());
